@@ -6,7 +6,28 @@ import config
 import math
 import time
 import sys
+import winsound
+import string
+import random
+# import multiprocessing
 # import traceback
+first_time = time.time()
+beatmap_data_s = {}
+
+
+class ModeError(Exception):
+	pass
+
+
+class MsgError(Exception):
+	pass
+
+
+class NpError(Exception):
+	pass
+
+
+# PP COMMANDS
 
 
 def get_b_data(api_key, beatmap_id):
@@ -21,11 +42,11 @@ def get_b_data(api_key, beatmap_id):
 	return osubresponse.json()
 
 
-def calculatepp(osubdata, acc="hi", max_player_combo="hi", miss="hi"):
+def calculatepp(osubdata, acc="hi", max_player_combo="hi", miss="hi", mods="hi"):
 	stars = float(osubdata["difficultyrating"])
 	max_combo = int(osubdata["max_combo"])
 
-	print(str(acc) + ", " + str(max_player_combo) + ", " + str(miss))
+	# print(str(acc) + ", " + str(max_player_combo) + ", " + str(miss))
 	try:
 		# print(str(miss))
 		miss = int(miss)
@@ -52,7 +73,7 @@ def calculatepp(osubdata, acc="hi", max_player_combo="hi", miss="hi"):
 		# print(traceback.format_exc())
 		acc = float(((max_combo - miss) / max_combo) * 100)
 
-	print(str(acc) + ", " + str(max_player_combo) + ", " + str(miss))
+	# print(str(acc) + ", " + str(max_player_combo) + ", " + str(miss))
 
 	ar = float(osubdata["diff_approach"])
 
@@ -70,36 +91,119 @@ def calculatepp(osubdata, acc="hi", max_player_combo="hi", miss="hi"):
 		finalpp *= 1
 	finalpp *= pow(acc / 100, 5.5)
 
-	# mods
-	# if HD.get() == 1:
-	# 	finalpp *= 1.05 + 0.075 * (10.0 - min(10.0, ar))
-	# if FL.get() == 1:
-	# 	finalpp *= 1.35 * (0.95 + 0.4 * min(1.0, max_combo / 3000.0) + (math.log(max_combo / 3000.0, 10) * 0.5 if max_combo > 3000 else 0.0))
-	# if NF.get() == 1:
-	# 	finalpp *= 0.90
+	try:
+		if mods & 8 == 8:
+			finalpp *= 1.05 + 0.075 * (10.0 - min(10.0, ar))
+		if mods & 1024 == 1024:
+			finalpp *= 1.35 * (0.95 + 0.4 * min(1.0, max_combo / 3000.0) + (math.log(max_combo / 3000.0, 10) * 0.5 if max_combo > 3000 else 0.0))
+		# if mods == 1:
+		# 	finalpp *= 0.90
+	except:
+		pass
 	# END
 
-	return int(round(finalpp, 0))
+	return float(round(finalpp, 3))
 
-link_s = {}
 
+def sendnp(message, name):
+	global beatmap_data_s
+	link = re.findall('http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', message)
+	try:
+		beatmap_id = urllib.parse.urlparse(link[0]).path.split("/")[2]
+		if urllib.parse.urlparse(link[0]).path.split("/")[1] != "b":
+			sendmsg("ERROR: TUB1D;" + ''.join(random.SystemRandom().choice(string.ascii_uppercase + string.ascii_lowercase + string.digits) for _ in range(20)), name)
+			return
+		beatmap_data = get_b_data(config.api_key, beatmap_id)
+		if not beatmap_data:
+			raise ModeError
+		beatmap_data_s[name] = beatmap_data
+		sent = beatmap_data[0]["artist"] + " - " + beatmap_data[0]["title"] + " [" + beatmap_data[0]["version"] + "] | osu!catch | SS: " + str(calculatepp(beatmap_data[0])) + "pp | 99.5% FC: " + str(calculatepp(beatmap_data[0], 99.5)) + "pp | 99% FC: " + str(calculatepp(beatmap_data[0], 99)) + "pp | 98.5% FC: " + str(calculatepp(beatmap_data[0], 98.5)) + "pp | " + str(round(float(beatmap_data[0]["difficultyrating"]), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data[0]["total_length"])))
+		sendmsg(sent, name)
+	except IndexError:
+		sendmsg("There seems to be no link in your /np... Is this a beatmap you made?", name)
+	except ModeError:
+		sendmsg("The bot only accepts CtB-mode maps, including converts. Sorry to the Mania and Taiko players out there :(", name)
+
+
+def sendacm(message, name):
+	global beatmap_data_s
+	try:
+		if name not in beatmap_data_s:
+			raise NpError
+		split_msg = message.split()
+		del split_msg[0]
+		if not split_msg:
+			raise MsgError
+		acc = 'hi'
+		combo = 'hi'
+		miss = 'hi'
+		for i in split_msg:
+			attr = i.split(":")
+			if attr[0] == "acc":
+				acc = attr[1]
+			elif attr[0] == "combo":
+				combo = attr[1]
+			elif attr[0] == "miss":
+				miss = attr[1]
+		beatmap_data = beatmap_data_s[name]
+		sent = beatmap_data[0]["artist"] + " - " + beatmap_data[0]["title"] + " [" + beatmap_data[0]["version"] + "] | osu!catch | With your indicated attributes: " + str(calculatepp(beatmap_data[0], acc, combo, miss)) + "pp | " + str(round(float(beatmap_data[0]["difficultyrating"]), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data[0]["total_length"])))
+		sendmsg(sent, name)
+	except MsgError:
+		sendmsg("Somehow your message got lost in my head... Send it again?", name)
+	except NpError:
+		sendmsg("You haven't /np'd me anything yet!", name)
+
+
+def sendmod(message, name):
+	global beatmap_data_s
+	try:
+		if name not in beatmap_data_s:
+			raise NpError
+		split_msg = message.split()
+		del split_msg[0]
+		if not split_msg:
+			raise MsgError
+		mods = 0
+		if split_msg[0].find("HD") != -1:
+			mods += 8
+		if split_msg[0].find("FL") != -1:
+			mods += 1024
+		beatmap_data = beatmap_data_s[name]
+		sent = beatmap_data[0]["artist"] + " - " + beatmap_data[0]["title"] + " [" + beatmap_data[0]["version"] + "] | osu!catch | With your indicated mods: " + str(calculatepp(beatmap_data[0], "", "", "", mods)) + "pp | " + str(round(float(beatmap_data[0]["difficultyrating"]), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data[0]["total_length"])))
+		sendmsg(sent, name)
+	except MsgError:
+		sendmsg("Somehow your message got lost in my head... Send it again?", name)
+	except NpError:
+		sendmsg("You haven't /np'd me anything yet!", name)
+
+
+def sendrec(message, name):
+	try:
+		# get top 10 beatmaps
+		# get scores with +-(variance) pp, about 10
+		# get users of scores
+		# check similar pp plays
+
+		pass
+	except:
+		pass
+
+
+# CONNECTION COMMANDS
 ircsock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-server = "cho.ppy.sh"  # Server
-channel = "#testit"  # Channel
+server = config.server  # Server
 password = config.password  # Password
-botnick = "aEverr"  # Your bots nick
-adminname = "aEverr"  # Your IRC nickname
-exitcode = "fuck you bot"
+botnick = config.botnick  # Your bots nick
+adminname = config.adminname  # Your IRC nickname
+exitcode = config.exitcode
 help_msg = "Need help? Check https://github.com/de-odex/aEverrBot/wiki for commands."
 connected = False
 ircsock.settimeout(300)
 last_ping = time.time()
-threshold = 15
-
-# ircsock.connect((server, 6667))  # Here we connect to the server using the port 6667
-# ircsock.send(bytes("PASS " + password + "\n", "UTF-8"))
-# ircsock.send(bytes("USER " + botnick + " " + botnick + " " + botnick + " " + botnick + "\n", "UTF-8"))  # We are basically filling out a form with this line and saying to set all the fields to the bot nickname.
-# ircsock.send(bytes("NICK " + botnick + "\n", "UTF-8"))  # assign the nick to the bot
+thresh_mult = 1.5
+threshold = int(round(64 * thresh_mult, 0))
+rec_tries = 1
+sleep_timer = 8
 
 
 def connection(host, port, password, nick, realname):
@@ -108,13 +212,16 @@ def connection(host, port, password, nick, realname):
 		try:
 			ircsock.connect((host, port))
 			ircsock.send(bytes("PASS " + password + "\n", "UTF-8"))
-			ircsock.send(bytes("USER %s %s bla :%s\r\n" % (realname, realname, realname)))
-			ircsock.send(bytes("NICK %s\r\n" % nick))
-			global connected
+			ircsock.send(bytes("USER " + botnick + " " + botnick + " " + botnick + " " + botnick + "\n", "UTF-8"))
+			ircsock.send(bytes("NICK " + botnick + "\n", "UTF-8"))
 			connected = True
 		except socket.error:
-			print("Attempting to connect...")
-			time.sleep(5)
+			global rec_tries, sleep_timer
+			print("Attempting to connect... Try #" + str(rec_tries) + ", sleeping for " + str(sleep_timer))
+			rec_tries += 1
+			winsound.PlaySound("SystemHand", winsound.SND_ALIAS)
+			time.sleep(sleep_timer)
+			sleep_timer *= 2 if sleep_timer < 256 else 1
 			continue
 
 
@@ -130,98 +237,86 @@ def joinchan(chan):  # join channel(s).
 def ping():  # respond to server Pings.
 	global last_ping
 	ircsock.send(bytes("PONG :pingis\n", "UTF-8"))
+	print("Ponged after " + str(time.time() - last_ping) + " seconds from last ping!")
 	last_ping = time.time()
 
 
 def sendmsg(msg, target):  # sends messages to the target.
-	ircsock.send(bytes("PRIVMSG " + target + " :" + msg + "\n", "UTF-8"))
-
-
-connection(server, 6667, password, botnick, botnick)
-
-
-# joinchan(channel)
-beatmap_id = {}
-beatmap_data = {}
-sent = {}
-split_msg = {}
-acc = {}
-combo = {}
-miss = {}
-while connected:
 	try:
-		ircmsg = ircsock.recv(1024).decode("UTF-8")
-		ircmsg = ircmsg.strip('\n\r')
-		# print(ircmsg)
-		if ircmsg.find("PRIVMSG") != -1:
-			# “:[Nick]!~[hostname]@[IP Address] PRIVMSG [channel] :[message]”
-			# “:[Username]!cho.ppy.sh PRIVMSG [Username] :[message]”
-			name = ircmsg.split('PRIVMSG', 1)[0].split(':')[-1].split("!")[0]  # ircmsg.split('!', 1)[0][1:]
-			message = ircmsg.split('PRIVMSG', 1)[1].split(':', 1)[1]
-			me = ircmsg.split('PRIVMSG', 1)[1].split(':', 1)[0].split()[0]
-			print(me)
-			print(ircmsg + " name:" + name)
-			if len(name) < 17:
-				if me == botnick:
-					if message[1:23].find("ACTION is listening to") != -1 or message[1:18].find("ACTION is playing") != -1:
-						link = re.findall('http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', message)
-						global link_s
-						try:
-							link_s[name] = link[0]
-							beatmap_id[name] = urllib.parse.urlparse(link_s[name]).path.split("/")[2]
-							beatmap_data[name] = get_b_data(config.api_key, beatmap_id[name])
+		ircsock.send(bytes("PRIVMSG " + target + " :" + msg + "\n", "UTF-8"))
+		print("Sending: [" + str(msg) + "] to: " + str(target))
+	except:
+		print("Failed!")
 
-							sent[name] = beatmap_data[name][0]["artist"] + " - " + beatmap_data[name][0]["title"] + " [" + beatmap_data[name][0]["version"] + "] | osu!catch | SS: " + str(calculatepp(beatmap_data[name][0])) + "pp | 99.9% FC: " + str(calculatepp(beatmap_data[name][0], 99.9)) + "pp"
-							sendmsg(sent[name], name)
-						except:
-							sendmsg("There seems to be no link in your /np... Is this a beatmap you made?", name)
 
-					# send help
-					if message[:2].find("!a") != -1:
-						if name not in link_s:
-							sendmsg("You haven't /np'd me anything yet!", name)
-						else:
-							split_msg[name] = message.split()
-							split_msg.pop(0)
-							acc[name] = 'hi'
-							combo[name] = 'hi'
-							miss[name] = 'hi'
-							if name not in split_msg:
-								sendmsg("Somehow your message got lost in my head... Send it again?", name)
-								break
-							for i in split_msg[name]:
-								attr = i.split(":")
-								if attr[0] == "acc":
-									acc[name] = attr[1]
-								elif attr[0] == "combo":
-									combo[name] = attr[1]
-								elif attr[0] == "miss":
-									miss[name] = attr[1]
-								else:
-									pass
-							beatmap_id[name] = urllib.parse.urlparse(link_s[name]).path.split("/")[2]
-							beatmap_data[name] = get_b_data(config.api_key, beatmap_id[name])
+# MAIN
 
-							sent[name] = beatmap_data[name][0]["artist"] + " - " + beatmap_data[name][0]["title"] + " [" + beatmap_data[name][0]["version"] + "] | osu!catch | With your indicated attributes: " + str(calculatepp(beatmap_data[name][0], acc[name], combo[name], miss[name])) + "pp"
-							sendmsg(sent[name], name)
 
-					if message[:2].find("!h") != -1:
-						sendmsg(help_msg, name)
+if __name__ == '__main__':
+	connection(server, 6667, password, botnick, botnick)
+	# joinchan(channel)
+	while connected:
+		try:
+			# print("Connected!")
+			rec_tries = 1
+			ircmsg = ircsock.recv(1024).decode("UTF-8")
+			ircmsg = ircmsg.strip('\n\r')
+			if ircmsg.find("QUIT") == -1 and ircmsg.find("PING") == -1:
+				print(ircmsg)
+			if ircmsg.find("PRIVMSG") != -1:
+				try:
+					# “:[Nick]!~[hostname]@[IP Address] PRIVMSG [channel] :[message]”
+					# “:[Username]!cho.ppy.sh PRIVMSG [Username] :[message]”
+					name = ircmsg.split('PRIVMSG', 1)[0].split(':')[-1].split("!")[0]  # ircmsg.split('!', 1)[0][1:]
+					message = ircmsg.split('PRIVMSG', 1)[1].split(':', 1)[1].splitlines()[0]  # .strip()[0]
+					me = ircmsg.split('PRIVMSG', 1)[1].split(':', 1)[0].split()[0]
+					# print(me)
+					print("name: " + name + ", message: " + message)
+					if len(name) < 17:
+						if me == botnick:
 
-					if name.lower() == adminname.lower() and message.rstrip() == exitcode:
-						sendmsg("aEverrBot is quitting.", name)
-						ircsock.send(bytes("QUIT \n", "UTF-8"))
-						sys.exit()
+							if message[1:10].find("ACTION is") != -1:
+								sendnp(message, name)
 
-		else:
-			if ircmsg.find("PING :") != -1:
+							if message[:2].find("!a") != -1:  # RECODE TO !a = acc !c = combo !m = miss
+								sendacm(message, name)
+
+							if message[:5].find("!with") != -1:
+								sendmod(message, name)
+
+							if message[:2].find("!h") != -1 or message[:5].find("!help") != -1:
+								sendmsg(help_msg, name)
+
+							if message[:2].find("!f") != -1 or message[:4].find("!faq") != -1:
+								sendmsg("You have to write \"acc:95\" for !a; You can indicate !a values in any order, as long as they have the prefix (acc:, combo:, miss:)", name)
+
+							if message[:2].find("!r") != -1:
+								sendmsg("Under construction", name)
+								pass
+
+							if message[:7].find("!uptime") != -1:
+								sendmsg(time.strftime("%H;%M;%S", time.gmtime(time.time() - first_time)) + " since start.", name)
+
+							if message[:5].find("!time") != -1:
+								sendmsg("Local time: " + time.strftime("%B %d %H:%M:%S", time.localtime(time.time())), name)
+
+							if name.lower() == adminname.lower() and message.rstrip() == exitcode:
+								sendmsg("aEverrBot is quitting.", name)
+								ircsock.send(bytes("QUIT \n", "UTF-8"))
+								sys.exit()
+						last_ping = time.time()
+						time.sleep(1)
+				except:
+					pass
+			elif ircmsg.find("PING") != -1:
 				ping()
-		if (time.time() - last_ping) > threshold:
+
+			if (time.time() - last_ping) > threshold:
+				raise socket.timeout
+		except socket.timeout:
+			connected = False
+			print("Connected = " + str(connected))
 			break
-	except socket.timeout:
-		global connected
-		connected = False
-		print(connected)
-		break
-print("No internet. Out of loop")
-connection(server, 6667, password, botnick, botnick)
+
+	print("No internet, Since Program start: " + time.strftime("%H:%M:%S", time.gmtime(time.time() - first_time)) + ". Restarting loop...")
+	connection(server, 6667, password, botnick, botnick)
