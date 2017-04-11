@@ -88,5 +88,8 @@ ENV/
 # Rope project settings
 .ropeproject
 
-# api keys
+# Project Specific
 config.py
+firsttime.txt
+.vs/
+slnx.sqlite
