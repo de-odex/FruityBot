@@ -27,6 +27,13 @@ class NpError(Exception):
 	pass
 
 
+class AttrError(Exception):
+	pass
+
+
+class TopPlayError(Exception):
+	pass
+
 # PP COMMANDS
 
 
@@ -38,8 +45,32 @@ def get_b_data(api_key, beatmap_id):
 		"m": 2,  # pick ctb game mode
 		"a": 1  # allow converts
 	}
-	osubresponse = requests.get("https://osu.ppy.sh/api/get_beatmaps", params=parameters)
-	return osubresponse.json()
+	osuresponse = requests.get("https://osu.ppy.sh/api/get_beatmaps", params=parameters)
+	return osuresponse.json()
+
+
+def get_tu_data(api_key, user_id):
+	# request for data
+	parameters = {
+		"k": api_key,
+		"u": user_id,
+		"m": 2,  # pick ctb game mode
+		"limit": 25  # limit to number
+	}
+	osuresponse = requests.get("https://osu.ppy.sh/api/get_user_best", params=parameters)
+	return osuresponse.json()
+
+
+def get_tb_data(api_key, beatmap_id):
+	# request for data
+	parameters = {
+		"k": api_key,
+		"b": beatmap_id,
+		"m": 2,  # pick ctb game mode
+		"limit": 100  # limit to number
+	}
+	osuresponse = requests.get("https://osu.ppy.sh/api/get_scores", params=parameters)
+	return osuresponse.json()
 
 
 def calculatepp(osubdata, acc="hi", max_player_combo="hi", miss="hi", mods="hi"):
@@ -117,7 +148,10 @@ def sendnp(message, name):
 		if not beatmap_data:
 			raise ModeError
 		beatmap_data_s[name] = beatmap_data
-		sent = beatmap_data[0]["artist"] + " - " + beatmap_data[0]["title"] + " [" + beatmap_data[0]["version"] + "] | osu!catch | SS: " + str(calculatepp(beatmap_data[0])) + "pp | 99.5% FC: " + str(calculatepp(beatmap_data[0], 99.5)) + "pp | 99% FC: " + str(calculatepp(beatmap_data[0], 99)) + "pp | 98.5% FC: " + str(calculatepp(beatmap_data[0], 98.5)) + "pp | " + str(round(float(beatmap_data[0]["difficultyrating"]), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data[0]["total_length"])))
+		artist_name = beatmap_data[0]["artist"] + " - " + beatmap_data[0]["title"] + " [" + beatmap_data[0]["version"] + "]"
+		pp_vals = (str(calculatepp(beatmap_data[0])), str(calculatepp(beatmap_data[0], 99.5)), str(calculatepp(beatmap_data[0], 99)), str(calculatepp(beatmap_data[0], 98.5)))
+		end_props = str(round(float(beatmap_data[0]["difficultyrating"]), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data[0]["total_length"])))
+		sent = artist_name + " | osu!catch | SS: " + pp_vals[0] + "pp | 99.5% FC: " + pp_vals[1] + "pp | 99% FC: " + pp_vals[2] + "pp | 98.5% FC: " + pp_vals[3] + "pp | " + end_props
 		sendmsg(sent, name)
 	except IndexError:
 		sendmsg("There seems to be no link in your /np... Is this a beatmap you made?", name)
@@ -145,13 +179,20 @@ def sendacm(message, name):
 				combo = attr[1]
 			elif attr[0] == "miss":
 				miss = attr[1]
+		if acc is 'hi' and combo is 'hi' and miss is 'hi':
+			raise AttrError
 		beatmap_data = beatmap_data_s[name]
-		sent = beatmap_data[0]["artist"] + " - " + beatmap_data[0]["title"] + " [" + beatmap_data[0]["version"] + "] | osu!catch | With your indicated attributes: " + str(calculatepp(beatmap_data[0], acc, combo, miss)) + "pp | " + str(round(float(beatmap_data[0]["difficultyrating"]), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data[0]["total_length"])))
+		artist_name = beatmap_data[0]["artist"] + " - " + beatmap_data[0]["title"] + " [" + beatmap_data[0]["version"] + "]"
+		pp_vals = (str(calculatepp(beatmap_data[0], acc, combo, miss)), )
+		end_props = str(round(float(beatmap_data[0]["difficultyrating"]), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data[0]["total_length"])))
+		sent = artist_name + " | osu!catch | With your indicated attributes: " + pp_vals[0] + "pp | " + end_props
 		sendmsg(sent, name)
 	except MsgError:
 		sendmsg("Somehow your message got lost in my head... Send it again?", name)
 	except NpError:
 		sendmsg("You haven't /np'd me anything yet!", name)
+	except AttrError:
+		sendmsg("You have to write \"acc:95\" for !a; You can indicate !a values in any order, as long as they have the prefix (acc:, combo:, miss:)", name)
 
 
 def sendmod(message, name):
@@ -164,12 +205,15 @@ def sendmod(message, name):
 		if not split_msg:
 			raise MsgError
 		mods = 0
-		if split_msg[0].find("HD") != -1:
+		if split_msg[0].lower().find("hd") != -1:
 			mods += 8
-		if split_msg[0].find("FL") != -1:
+		if split_msg[0].lower().find("fl") != -1:
 			mods += 1024
 		beatmap_data = beatmap_data_s[name]
-		sent = beatmap_data[0]["artist"] + " - " + beatmap_data[0]["title"] + " [" + beatmap_data[0]["version"] + "] | osu!catch | With your indicated mods: " + str(calculatepp(beatmap_data[0], "", "", "", mods)) + "pp | " + str(round(float(beatmap_data[0]["difficultyrating"]), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data[0]["total_length"])))
+		artist_name = beatmap_data[0]["artist"] + " - " + beatmap_data[0]["title"] + " [" + beatmap_data[0]["version"] + "]"
+		pp_vals = (str(calculatepp(beatmap_data[0], "", "", "", mods)), )
+		end_props = str(round(float(beatmap_data[0]["difficultyrating"]), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data[0]["total_length"])))
+		sent = artist_name + " | osu!catch | With your indicated mods: " + pp_vals[0] + "pp | " + end_props
 		sendmsg(sent, name)
 	except MsgError:
 		sendmsg("Somehow your message got lost in my head... Send it again?", name)
@@ -177,17 +221,51 @@ def sendmod(message, name):
 		sendmsg("You haven't /np'd me anything yet!", name)
 
 
-def sendrec(message, name):
+def sendrec(message, name):  # how the fuck do i do this
 	try:
 		# get top 10 beatmaps
+		top_beatmaps = get_tu_data(config.api_key, name)
+		top_beatmap_ids = []
+		top_beatmap_other_plays = {}
+
+		if not top_beatmaps:
+			raise TopPlayError
+
+		for i in top_beatmaps:
+			top_beatmap_ids.append(i["beatmap_id"])
+
+		for i in top_beatmap_ids:
+			top_beatmap_other_plays[i] = get_tb_data(config.api_key, i)
+			if True: 
+				try:
+					del myDict['key']
+				except KeyError:
+					pass
+
 		# get scores with +-(variance) pp, about 10
 		# get users of scores
 		# check similar pp plays
 
-		pass
-	except:
-		pass
+		# debug:
+		print(top_beatmap_other_plays)
+	except TopPlayError:
+		sendmsg("No top plays. Play the default maps first!", name)
 
+
+def send1sttime(name):
+	global first_time_msg
+	temp = open("firsttime.txt", "a")							# if file doesn't exist, make it
+	temp.close()												# close file
+	first_names_file = open("firsttime.txt", "r")				# read file data
+	all_first_names = first_names_file.read().splitlines()		# split to lines
+	first_names_file.close()									# close reading, for writing
+	if name not in all_first_names:
+		sendmsg(first_time_msg, name)							# send the first time message
+		first_names_file = open("firsttime.txt", "a+")			# write file data
+		first_names_file.write(name + "\n")						# write file data
+		first_names_file.close()								# close file for resources
+	else:
+		return
 
 # CONNECTION COMMANDS
 ircsock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -197,7 +275,9 @@ botnick = config.botnick  # Your bots nick
 adminname = config.adminname  # Your IRC nickname
 exitcode = config.exitcode
 help_msg = "Need help? Check https://github.com/de-odex/aEverrBot/wiki for commands."
+first_time_msg = "Welcome, and thanks for using my bot! Check out https://github.com/de-odex/aEverrBot/wiki for commands."
 connected = False
+connmsg = True
 ircsock.settimeout(300)
 last_ping = time.time()
 thresh_mult = 1.5
@@ -257,12 +337,14 @@ if __name__ == '__main__':
 	# joinchan(channel)
 	while connected:
 		try:
+			sleep_timer = 8
 			# print("Connected!")
 			rec_tries = 1
 			ircmsg = ircsock.recv(1024).decode("UTF-8")
 			ircmsg = ircmsg.strip('\n\r')
-			if ircmsg.find("QUIT") == -1 and ircmsg.find("PING") == -1:
-				print(ircmsg)
+			if connmsg is True:
+				print("Connected to: " + server + ", name: " + botnick)
+				connmsg = False
 			if ircmsg.find("PRIVMSG") != -1:
 				try:
 					# “:[Nick]!~[hostname]@[IP Address] PRIVMSG [channel] :[message]”
@@ -276,28 +358,36 @@ if __name__ == '__main__':
 						if me == botnick:
 
 							if message[1:10].find("ACTION is") != -1:
+								send1sttime(name)
 								sendnp(message, name)
 
 							if message[:2].find("!a") != -1:  # RECODE TO !a = acc !c = combo !m = miss
+								send1sttime(name)
 								sendacm(message, name)
 
 							if message[:5].find("!with") != -1:
+								send1sttime(name)
 								sendmod(message, name)
 
 							if message[:2].find("!h") != -1 or message[:5].find("!help") != -1:
+								first_names_file = open("firsttime.txt", "a+")
+								all_first_names = first_names_file.read().splitlines()
+								if name not in all_first_names:
+									first_names_file.write(name + "\n")
 								sendmsg(help_msg, name)
 
-							if message[:2].find("!f") != -1 or message[:4].find("!faq") != -1:
-								sendmsg("You have to write \"acc:95\" for !a; You can indicate !a values in any order, as long as they have the prefix (acc:, combo:, miss:)", name)
-
 							if message[:2].find("!r") != -1:
+								send1sttime(name)
 								sendmsg("Under construction", name)
+								sendrec(message, name)
 								pass
 
 							if message[:7].find("!uptime") != -1:
+								send1sttime(name)
 								sendmsg(time.strftime("%H;%M;%S", time.gmtime(time.time() - first_time)) + " since start.", name)
 
 							if message[:5].find("!time") != -1:
+								send1sttime(name)
 								sendmsg("Local time: " + time.strftime("%B %d %H:%M:%S", time.localtime(time.time())), name)
 
 							if name.lower() == adminname.lower() and message.rstrip() == exitcode:
