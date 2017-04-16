@@ -9,10 +9,14 @@ import sys
 import winsound
 import string
 import random
+import ctypes
 # import multiprocessing
-# import traceback
+import traceback
 first_time = time.time()
 beatmap_data_s = {}
+mod_data_s = {}
+ctypes.windll.kernel32.SetConsoleTitleW("aEverrBot")
+UPDATE_MSG = "eyo, its boterino here with an update ([http://i.imgur.com/sSSaclO.png sic]). I've changed !a to !acc, like Tillerino's !acc. !a no longer works like it should."
 
 
 class ModeError(Exception):
@@ -33,6 +37,17 @@ class AttrError(Exception):
 
 class TopPlayError(Exception):
 	pass
+
+
+class ComboError(Exception):
+	pass
+
+def isfloat(value):
+  try:
+    float(value)
+    return True
+  except ValueError:
+    return False
 
 # PP COMMANDS
 
@@ -137,9 +152,10 @@ def calculatepp(osubdata, acc="hi", max_player_combo="hi", miss="hi", mods="hi")
 
 
 def sendnp(message, name):
-	global beatmap_data_s
+	global beatmap_data_s, mod_data_s
 	link = re.findall('http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', message)
 	try:
+		mod_data_s[name] = 0
 		beatmap_id = urllib.parse.urlparse(link[0]).path.split("/")[2]
 		if urllib.parse.urlparse(link[0]).path.split("/")[1] != "b":
 			sendmsg("ERROR: TUB1D;" + ''.join(random.SystemRandom().choice(string.ascii_uppercase + string.ascii_lowercase + string.digits) for _ in range(20)), name)
@@ -150,20 +166,27 @@ def sendnp(message, name):
 		beatmap_data_s[name] = beatmap_data
 		artist_name = beatmap_data[0]["artist"] + " - " + beatmap_data[0]["title"] + " [" + beatmap_data[0]["version"] + "]"
 		pp_vals = (str(calculatepp(beatmap_data[0])), str(calculatepp(beatmap_data[0], 99.5)), str(calculatepp(beatmap_data[0], 99)), str(calculatepp(beatmap_data[0], 98.5)))
-		end_props = str(round(float(beatmap_data[0]["difficultyrating"]), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data[0]["total_length"])))
+		end_props = str(round(float(beatmap_data[0]["difficultyrating"]), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data[0]["total_length"]))) + " AR" + str(beatmap_data[0]["diff_approach"]) + " MAX" + str(beatmap_data[0]["max_combo"]) 
 		sent = artist_name + " | osu!catch | SS: " + pp_vals[0] + "pp | 99.5% FC: " + pp_vals[1] + "pp | 99% FC: " + pp_vals[2] + "pp | 98.5% FC: " + pp_vals[3] + "pp | " + end_props
 		sendmsg(sent, name)
 	except IndexError:
 		sendmsg("There seems to be no link in your /np... Is this a beatmap you made?", name)
 	except ModeError:
 		sendmsg("The bot only accepts CtB-mode maps, including converts. Sorry to the Mania and Taiko players out there :(", name)
+	except:
+		traceback.print_exc(file=sys.stdout)
 
 
 def sendacm(message, name):
-	global beatmap_data_s
+	global beatmap_data_s, mod_data_s
 	try:
+		mods_name = ""
 		if name not in beatmap_data_s:
 			raise NpError
+		if name not in mod_data_s:
+			mods = 0
+		else:
+			mods = mod_data_s[name]
 		split_msg = message.split()
 		del split_msg[0]
 		if not split_msg:
@@ -172,32 +195,48 @@ def sendacm(message, name):
 		combo = 'hi'
 		miss = 'hi'
 		for i in split_msg:
-			attr = i.split(":")
-			if attr[0] == "acc":
-				acc = attr[1]
-			elif attr[0] == "combo":
-				combo = attr[1]
-			elif attr[0] == "miss":
-				miss = attr[1]
-		if acc is 'hi' and combo is 'hi' and miss is 'hi':
+			if isfloat(i):
+				acc = i
+			elif i.endswith(("x", )):
+				combo = i.rstrip("x")
+			elif i.endswith(("m", )):
+				miss = i.rstrip("m")
+			else:
+				pass
+		if acc == 'hi' and combo == 'hi' and miss == 'hi':
 			raise AttrError
+		if mods & 8 == 8:
+			mods_name += "HD"
+		if mods & 1024 == 1024:
+			mods_name += "FL"
+		if mods == 0:
+			mods_name = "NoMod"
 		beatmap_data = beatmap_data_s[name]
+		if int(combo) < (int(beatmap_data[0]["max_combo"]) / (int(miss)+1)):
+			print(combo + " ??? " + str(int(beatmap_data[0]["max_combo"]) / (int(miss)+1)))
+			raise ComboError
 		artist_name = beatmap_data[0]["artist"] + " - " + beatmap_data[0]["title"] + " [" + beatmap_data[0]["version"] + "]"
-		pp_vals = (str(calculatepp(beatmap_data[0], acc, combo, miss)), )
-		end_props = str(round(float(beatmap_data[0]["difficultyrating"]), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data[0]["total_length"])))
-		sent = artist_name + " | osu!catch | With your indicated attributes: " + pp_vals[0] + "pp | " + end_props
+		acccombomiss = str(acc) + "% " + str(combo) + "x " + str(miss) + "miss " + mods_name
+		pp_vals = (str(calculatepp(beatmap_data[0], acc, combo, miss, mods)), )
+		end_props = str(round(float(beatmap_data[0]["difficultyrating"]), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data[0]["total_length"]))) + " AR" + str(beatmap_data[0]["diff_approach"]) + " MAX" + str(beatmap_data[0]["max_combo"]) 
+		sent = artist_name + " | osu!catch | " + acccombomiss + ": " + pp_vals[0] + "pp | " + end_props
 		sendmsg(sent, name)
 	except MsgError:
 		sendmsg("Somehow your message got lost in my head... Send it again?", name)
 	except NpError:
 		sendmsg("You haven't /np'd me anything yet!", name)
 	except AttrError:
-		sendmsg("You have to write \"acc:95\" for !a; You can indicate !a values in any order, as long as they have the prefix (acc:, combo:, miss:)", name)
+		sendmsg("Do it like me, \"!acc 95 200x 1m\". Or something, I dunno.", name)
+	except ComboError:
+		sendmsg("Something's up, or I guess in this case, down, with your combo.", name)
+	except:
+		traceback.print_exc(file=sys.stdout)
 
 
 def sendmod(message, name):
-	global beatmap_data_s
+	global beatmap_data_s, mod_data_s
 	try:
+		mods_name = ""
 		if name not in beatmap_data_s:
 			raise NpError
 		split_msg = message.split()
@@ -207,18 +246,27 @@ def sendmod(message, name):
 		mods = 0
 		if split_msg[0].lower().find("hd") != -1:
 			mods += 8
-		if split_msg[0].lower().find("fl") != -1:
+		elif split_msg[0].lower().find("fl") != -1:
 			mods += 1024
+		if mods & 8 == 8:
+			mods_name += "HD"
+		elif mods & 1024 == 1024:
+			mods_name += "FL"
+		else:
+			raise MsgError
+		mod_data_s[name] = mods
 		beatmap_data = beatmap_data_s[name]
 		artist_name = beatmap_data[0]["artist"] + " - " + beatmap_data[0]["title"] + " [" + beatmap_data[0]["version"] + "]"
 		pp_vals = (str(calculatepp(beatmap_data[0], "", "", "", mods)), )
-		end_props = str(round(float(beatmap_data[0]["difficultyrating"]), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data[0]["total_length"])))
-		sent = artist_name + " | osu!catch | With your indicated mods: " + pp_vals[0] + "pp | " + end_props
+		end_props = str(round(float(beatmap_data[0]["difficultyrating"]), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data[0]["total_length"]))) + " AR" + str(beatmap_data[0]["diff_approach"]) + " MAX" + str(beatmap_data[0]["max_combo"]) 
+		sent = artist_name + " | osu!catch | With " + mods_name + ": " + pp_vals[0] + "pp | " + end_props
 		sendmsg(sent, name)
 	except MsgError:
 		sendmsg("Somehow your message got lost in my head... Send it again?", name)
 	except NpError:
 		sendmsg("You haven't /np'd me anything yet!", name)
+	except:
+		traceback.print_exc(file=sys.stdout)
 
 
 def sendrec(message, name):  # how the fuck do i do this
@@ -226,22 +274,36 @@ def sendrec(message, name):  # how the fuck do i do this
 		# get top 10 beatmaps
 		top_beatmaps = get_tu_data(config.api_key, name)
 		top_beatmap_ids = []
+		top_beatmap_pp = {}
 		top_beatmap_other_plays = {}
+		k = 0
 
 		if not top_beatmaps:
 			raise TopPlayError
 
 		for i in top_beatmaps:
 			top_beatmap_ids.append(i["beatmap_id"])
+			top_beatmap_pp[i["beatmap_id"]] = i["pp"]
 
 		for i in top_beatmap_ids:
 			top_beatmap_other_plays[i] = get_tb_data(config.api_key, i)
-			if True: 
+			print(str(top_beatmap_other_plays) + " \n\n\n " + str(top_beatmap_pp))
+			for j in range(0, 99):
 				try:
-					del myDict['key']
-				except KeyError:
+					print("i" + str(i) + " j" + str(j))
+					print(str(top_beatmap_other_plays[i][k]["pp"]))
+					print(str(float(top_beatmap_pp[i]) * 1.1) + " and " + str(float(top_beatmap_pp[i]) * 0.9))
+					if float(top_beatmap_other_plays[i][k]["pp"]) > (float(top_beatmap_pp[i]) * 1.1) or float(top_beatmap_other_plays[i][k]["pp"]) < (float(top_beatmap_pp[i]) * 0.9): 
+						print("delete true\n")
+						try:
+							del top_beatmap_other_plays[i][k]
+						except KeyError:
+							pass
+					else:
+						print("delete false\n")
+						k += 1
+				except IndexError:
 					pass
-
 		# get scores with +-(variance) pp, about 10
 		# get users of scores
 		# check similar pp plays
@@ -250,6 +312,8 @@ def sendrec(message, name):  # how the fuck do i do this
 		print(top_beatmap_other_plays)
 	except TopPlayError:
 		sendmsg("No top plays. Play the default maps first!", name)
+	except:
+		traceback.print_exc(file=sys.stdout)
 
 
 def send1sttime(name):
@@ -267,8 +331,22 @@ def send1sttime(name):
 	else:
 		return
 
+def sendstore(message, name, file1):
+	temp = open(file1, "a")										# if file doesn't exist, make it
+	temp.close()												# close file
+	names_file = open(file1, "r")								# read file data
+	all_names = names_file.read().splitlines()					# split to lines
+	names_file.close()											# close reading, for writing
+	if name not in all_names:
+		sendmsg(message, name)									# send the first time message
+		names_file = open(file1, "a+")							# write file data
+		names_file.write(name + "\n")							# write file data
+		names_file.close()										# close file for resources
+	else:
+		return
+
 # CONNECTION COMMANDS
-ircsock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+ircsock = None
 server = config.server  # Server
 password = config.password  # Password
 botnick = config.botnick  # Your bots nick
@@ -278,7 +356,6 @@ help_msg = "Need help? Check https://github.com/de-odex/aEverrBot/wiki for comma
 first_time_msg = "Welcome, and thanks for using my bot! Check out https://github.com/de-odex/aEverrBot/wiki for commands."
 connected = False
 connmsg = True
-ircsock.settimeout(300)
 last_ping = time.time()
 thresh_mult = 1.5
 threshold = int(round(64 * thresh_mult, 0))
@@ -287,7 +364,10 @@ sleep_timer = 8
 
 
 def connection(host, port, password, nick, realname):
-	global connected
+	global connected, ircsock
+	ircsock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+	ircsock.settimeout(300)
+
 	while connected is False:
 		try:
 			ircsock.connect((host, port))
@@ -296,6 +376,7 @@ def connection(host, port, password, nick, realname):
 			ircsock.send(bytes("NICK " + botnick + "\n", "UTF-8"))
 			connected = True
 		except socket.error:
+			traceback.print_exc(file=sys.stdout)
 			global rec_tries, sleep_timer
 			print("Attempting to connect... Try #" + str(rec_tries) + ", sleeping for " + str(sleep_timer))
 			rec_tries += 1
@@ -324,7 +405,8 @@ def ping():  # respond to server Pings.
 def sendmsg(msg, target):  # sends messages to the target.
 	try:
 		ircsock.send(bytes("PRIVMSG " + target + " :" + msg + "\n", "UTF-8"))
-		print("Sending: [" + str(msg) + "] to: " + str(target))
+		winsound.PlaySound('notif.wav', winsound.SND_FILENAME)
+		print("!~~~!\nSending: [" + str(msg) + "] to: " + str(target) + "\n!~~~!")
 	except:
 		print("Failed!")
 
@@ -333,6 +415,7 @@ def sendmsg(msg, target):  # sends messages to the target.
 
 
 if __name__ == '__main__':
+	print(sys.version)
 	connection(server, 6667, password, botnick, botnick)
 	# joinchan(channel)
 	while connected:
@@ -358,10 +441,12 @@ if __name__ == '__main__':
 						if me == botnick:
 
 							if message[1:10].find("ACTION is") != -1:
+								sendstore(UPDATE_MSG, name, "updates.txt")
 								send1sttime(name)
 								sendnp(message, name)
 
-							if message[:2].find("!a") != -1:  # RECODE TO !a = acc !c = combo !m = miss
+							if message[:4].find("!acc") != -1:
+								sendstore(UPDATE_MSG, name, "updates.txt")
 								send1sttime(name)
 								sendacm(message, name)
 
@@ -370,6 +455,7 @@ if __name__ == '__main__':
 								sendmod(message, name)
 
 							if message[:2].find("!h") != -1 or message[:5].find("!help") != -1:
+								sendstore(UPDATE_MSG, name, "updates.txt")
 								first_names_file = open("firsttime.txt", "a+")
 								all_first_names = first_names_file.read().splitlines()
 								if name not in all_first_names:
@@ -377,16 +463,19 @@ if __name__ == '__main__':
 								sendmsg(help_msg, name)
 
 							if message[:2].find("!r") != -1:
+								sendstore(UPDATE_MSG, name, "updates.txt")
 								send1sttime(name)
 								sendmsg("Under construction", name)
 								sendrec(message, name)
 								pass
 
 							if message[:7].find("!uptime") != -1:
+								sendstore(UPDATE_MSG, name, "updates.txt")
 								send1sttime(name)
 								sendmsg(time.strftime("%H;%M;%S", time.gmtime(time.time() - first_time)) + " since start.", name)
 
 							if message[:5].find("!time") != -1:
+								sendstore(UPDATE_MSG, name, "updates.txt")
 								send1sttime(name)
 								sendmsg("Local time: " + time.strftime("%B %d %H:%M:%S", time.localtime(time.time())), name)
 
@@ -406,7 +495,12 @@ if __name__ == '__main__':
 		except socket.timeout:
 			connected = False
 			print("Connected = " + str(connected))
+			ircsock.shutdown(socket.SHUT_RDWR)
+			ircsock.close()
 			break
 
 	print("No internet, Since Program start: " + time.strftime("%H:%M:%S", time.gmtime(time.time() - first_time)) + ". Restarting loop...")
 	connection(server, 6667, password, botnick, botnick)
+	print("Eeeh?? It ended?!")
+	winsound.PlaySound("SystemHand", winsound.SND_ALIAS)
+	input()
