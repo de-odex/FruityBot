@@ -1,4 +1,4 @@
-# aEverrBot
-Tillerino for osu!catch
+# MulTillerino
+Tillerino for osu!catch (soon to be for other modes)
 
-Soon to be rewritten with Twisted
+I have no idea how to write a README.
