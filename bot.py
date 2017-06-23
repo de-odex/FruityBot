@@ -8,7 +8,7 @@ from twisted.internet import reactor, protocol
 from twisted.python import log
 
 # system imports
-import time, sys, requests, re, urllib, math, traceback, slider, yaml
+import time, sys, requests, re, urllib, math, traceback, slider, yaml  # yaml for saving user prefs
 
 try:
 	import config, calc
@@ -53,7 +53,7 @@ class ProgramLogic:
 	def __init__(self, file):
 		self.file = file
 		self.repfile = open("reports.log", "a")
-		self.UPDATE_MSG = "eyo, its boterino here with an update ([https://aeverr.s-ul.eu/CpdBefOU sic]). Added Mania Gamemode support. Set with !mode [ctb|mania|taiko]. Suspect to bugs, please help me test"
+		self.UPDATE_MSG = "eyo, its boterino here with an update ([https://aeverr.s-ul.eu/CpdBefOU sic]). Added Mania Gamemode support. Suspect to bugs, please help me test"
 		self.FIRST_TIME_MSG = "Welcome, and thanks for using my bot! Check out https://github.com/de-odex/aEverrBot/wiki for commands. !botreport to report a bug."
 
 	def log(self, message):
@@ -197,7 +197,7 @@ class ProgramLogic:
 
 					artist_name = beatmap_data[0]["artist"] + " - " + beatmap_data[0]["title"] + " [" + beatmap_data[0]["version"] + "]"
 					pp_vals = (str(self.calculatepp(beatmap_data[0], beatmap=beatmap, mode=mode)), str(self.calculatepp(beatmap_data[0], beatmap=beatmap, mode=mode, acc=99, score=970000)), str(self.calculatepp(beatmap_data[0], beatmap=beatmap, mode=mode, acc=97, score=900000)))
-					end_props = str(round(float(beatmap_data[0]["difficultyrating"]), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data[0]["total_length"]))) + " OD" + str(beatmap_data[0]["diff_overall"]) + " " + str(beatmap_data[0]["diff_size"]) + "key MAX" + str(beatmap_data[0]["max_combo"])
+					end_props = str(round(float(beatmap_data[0]["difficultyrating"]), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data[0]["total_length"]))) + " OD" + str(beatmap_data[0]["diff_overall"]) + " " + str(beatmap_data[0]["diff_size"]) + "key OBJ" + str(len(beatmap.hit_objects))
 					sent = artist_name + " | osu!mania | SS: " + pp_vals[0] + "pp | 99% 970k: " + pp_vals[1] + "pp | 97% 900k: " + pp_vals[2] + "pp | " + end_props
 
 			elif ident == "acm":
@@ -299,7 +299,7 @@ class ProgramLogic:
 
 					pp_vals = (str(self.calculatepp(beatmap_data[0], beatmap=beatmap, mode=mode, acc=acc, score=score, mods=mods)), )
 					accscore = str(acc) + "% " + str(score) + " " + mods_name
-					end_props = str(round(float(beatmap_data[0]["difficultyrating"]), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data[0]["total_length"]))) + " OD" + str(beatmap_data[0]["diff_overall"]) + " " + str(beatmap_data[0]["diff_size"]) + "key MAX" + str(beatmap_data[0]["max_combo"])
+					end_props = str(round(float(beatmap_data[0]["difficultyrating"]), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data[0]["total_length"]))) + " OD" + str(beatmap_data[0]["diff_overall"]) + " " + str(beatmap_data[0]["diff_size"]) + "key OBJ" + str(len(beatmap.hit_objects))
 					sent = artist_name + " | osu!mania | " + accscore + ": " + pp_vals[0] + "pp | " + end_props
 			elif ident == "mod":
 				pass
