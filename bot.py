@@ -58,7 +58,7 @@ class ProgramLogic:
 	def __init__(self, file):
 		self.file = file
 		self.repfile = open("reports.log", "a")
-		self.UPDATE_MSG = "eyo, its boterino here with an update ([https://aeverr.s-ul.eu/CpdBefOU sic]). Added Mania Gamemode support. Change mode with !set mode [catch|mania]. Suspect to bugs, please help me test"
+		self.UPDATE_MSG = "eyo, its boterino here with an update ([https://aeverr.s-ul.eu/CpdBefOU sic]). Added mod support (HD FL for catch, NF EZ for mania). Added Mania Gamemode support. Change mode with !set mode [catch|mania]. Suspect to bugs, please help me test"
 		self.FIRST_TIME_MSG = "Welcome, and thanks for using my bot! Check out https://github.com/de-odex/aEverrBot/wiki for commands. !botreport to report a bug."
 
 	def log(self, message):
@@ -201,17 +201,17 @@ class ProgramLogic:
 				if not beatmap_data:
 					raise ModeError
 
-				cur.execute("SELECT * FROM userdb WHERE user=?", (name,))
-				modedb = cur.fetchone()
-				if modedb is None:
-					return "Please set a mode with !set mode [catch|mania]"
-				else:
-					cur.execute("SELECT mode FROM userdb WHERE user=?", (name,))
-					mode = modedb[1]
-
 				# mode checking
 				if beatmap_data[0]["mode"] != "0":
 					mode = int(beatmap_data[0]["mode"])
+				else:
+					cur.execute("SELECT * FROM userdb WHERE user=?", (name,))
+					modedb = cur.fetchone()
+					if modedb is None:
+						return "Please set a mode with !set mode [catch|mania]"
+					else:
+						cur.execute("SELECT mode FROM userdb WHERE user=?", (name,))
+						mode = modedb[1]
 				beatmap_data[0] = self.get_b_data(config.api_key, beatmap_data[0]["beatmap_id"], mode)[0]
 				beatmap_data_s[name] = beatmap_data
 
