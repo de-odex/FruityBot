@@ -8,7 +8,7 @@ from twisted.internet import reactor, protocol
 from twisted.python import log
 
 # system imports
-import time, sys, requests, re, urllib, math, traceback, slider, yaml  # yaml for saving user prefs
+import time, sys, requests, re, urllib, math, traceback, slider, sqlite3  # sqlite for saving user prefs
 
 try:
 	import config, calc
@@ -17,9 +17,14 @@ except ImportError:
 	input()
 	sys.exit()
 
+userdb = sqlite3.connect('userpref.db')
+cur = userdb.cursor()
+userdb.execute("CREATE TABLE IF NOT EXISTS userdb (user int PRIMARY KEY, mode int)")
+userdb.commit()
+
 beatmap_data_s = {}
+acm_data_s = {}
 mod_data_s = {}
-modes_name = {}
 first_time = time.time()
 
 
@@ -53,7 +58,7 @@ class ProgramLogic:
 	def __init__(self, file):
 		self.file = file
 		self.repfile = open("reports.log", "a")
-		self.UPDATE_MSG = "eyo, its boterino here with an update ([https://aeverr.s-ul.eu/CpdBefOU sic]). Added Mania Gamemode support. Suspect to bugs, please help me test"
+		self.UPDATE_MSG = "eyo, its boterino here with an update ([https://aeverr.s-ul.eu/CpdBefOU sic]). Added Mania Gamemode support. Change mode with !set mode [catch|mania]. Suspect to bugs, please help me test"
 		self.FIRST_TIME_MSG = "Welcome, and thanks for using my bot! Check out https://github.com/de-odex/aEverrBot/wiki for commands. !botreport to report a bug."
 
 	def log(self, message):
@@ -128,7 +133,6 @@ class ProgramLogic:
 
 	# calc ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 	def calculatepp(self, osubdata, mode, beatmap=0, **kwargs):
-		global modes_name
 		# kwarg setting
 
 		acc = kwargs.get('acc', 100)
@@ -159,32 +163,57 @@ class ProgramLogic:
 		else:
 			return False
 
-	def setpref(self, message, name, file1):
-		pass
+	def setpref(self, message, name):
+		global userdb, cur
+		split_msg = message.split()
+
+		if split_msg[0] == "mode":
+			if split_msg[1] == "catch":
+				mode = 2
+			elif split_msg[1] == "mania":
+				mode = 3
+			else:
+				return "Invalid command"
+
+			cur.execute("SELECT * FROM userdb WHERE user=?", (name,))
+			if cur.fetchone() is None:
+				userdb.execute("INSERT INTO userdb (user, mode) VALUES (?,?)", (name, mode))
+				userdb.commit()
+			else:
+				userdb.execute("UPDATE userdb set mode = ? where user = ?", (mode, name))
+				userdb.commit()
+			return "Set <" + split_msg[0] + "> to <" + split_msg[1] + ">"
+		else:
+			return "Invalid command"
 
 	def sendpp(self, message, name, ident="np"):
-		global beatmap_data_s, mod_data_s, modes_name
+		global beatmap_data_s, mod_data_s, userdb, cur
 		try:
+			# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 			if ident == "np":
 				link = re.findall('http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', message)
 				mod_data_s[name] = 0
+				acm_data_s[name] = 0
 				beatmap_id = urllib.parse.urlparse(link[0]).path.split("/")[2]
 				if urllib.parse.urlparse(link[0]).path.split("/")[1] != "b":
 					return "This is a beatmapset, not a beatmap"
 				beatmap_data = self.get_b_data(config.api_key, beatmap_id)
 				if not beatmap_data:
 					raise ModeError
-				beatmap_data_s[name] = beatmap_data
 
-				if name not in modes_name:
-					mode = 2
+				cur.execute("SELECT * FROM userdb WHERE user=?", (name,))
+				modedb = cur.fetchone()
+				if modedb is None:
+					return "Please set a mode with !set mode [catch|mania]"
 				else:
-					mode = int(modes_name[name])
+					cur.execute("SELECT mode FROM userdb WHERE user=?", (name,))
+					mode = modedb[1]
+
 				# mode checking
 				if beatmap_data[0]["mode"] != "0":
 					mode = int(beatmap_data[0]["mode"])
-				else:
-					beatmap_data[0] = self.get_b_data(config.api_key, beatmap_data[0]["beatmap_id"], mode)[0]
+				beatmap_data[0] = self.get_b_data(config.api_key, beatmap_data[0]["beatmap_id"], mode)[0]
+				beatmap_data_s[name] = beatmap_data
 
 				if mode == 2:
 					artist_name = beatmap_data[0]["artist"] + " - " + beatmap_data[0]["title"] + " [" + beatmap_data[0]["version"] + "]"
@@ -199,7 +228,7 @@ class ProgramLogic:
 					pp_vals = (str(self.calculatepp(beatmap_data[0], beatmap=beatmap, mode=mode)), str(self.calculatepp(beatmap_data[0], beatmap=beatmap, mode=mode, acc=99, score=970000)), str(self.calculatepp(beatmap_data[0], beatmap=beatmap, mode=mode, acc=97, score=900000)))
 					end_props = str(round(float(beatmap_data[0]["difficultyrating"]), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data[0]["total_length"]))) + " OD" + str(beatmap_data[0]["diff_overall"]) + " " + str(beatmap_data[0]["diff_size"]) + "key OBJ" + str(len(beatmap.hit_objects))
 					sent = artist_name + " | osu!mania | SS: " + pp_vals[0] + "pp | 99% 970k: " + pp_vals[1] + "pp | 97% 900k: " + pp_vals[2] + "pp | " + end_props
-
+			# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 			elif ident == "acm":
 				mods_name = ""
 				if name not in beatmap_data_s:
@@ -234,23 +263,30 @@ class ProgramLogic:
 				if acc == 'hi' and combo == 'hi' and miss == 'hi' and score == 'hi':
 					raise AttrError
 
+				if mods & 1 == 1:
+					mods_name += "NF"
+				if mods & 2 == 2:
+					mods_name += "EZ"
 				if mods & 8 == 8:
 					mods_name += "HD"
 				if mods & 1024 == 1024:
 					mods_name += "FL"
 				if mods == 0:
-					mods_name = "NoMod"
+					return "These mods are not supported yet!"
 
 				# Attribute testing
-				if name not in modes_name:
-					mode = 2
+				cur.execute("SELECT * FROM userdb WHERE user=?", (name,))
+				modedb = cur.fetchone()
+				if modedb is None:
+					return "Please set a mode with !set mode [catch|mania]"
 				else:
-					mode = int(modes_name[name])
+					cur.execute("SELECT mode FROM userdb WHERE user=?", (name,))
+					mode = modedb[1]
+
 				# mode checking
 				if beatmap_data[0]["mode"] != "0":
 					mode = int(beatmap_data[0]["mode"])
-				else:
-					beatmap_data[0] = self.get_b_data(config.api_key, beatmap_data[0]["beatmap_id"], mode)[0]
+				beatmap_data[0] = self.get_b_data(config.api_key, beatmap_data[0]["beatmap_id"], mode)[0]
 
 				max_combo = int(beatmap_data[0]["max_combo"]) if beatmap_data[0]["max_combo"] is not None else "err"
 				artist_name = beatmap_data[0]["artist"] + " - " + beatmap_data[0]["title"] + " [" + beatmap_data[0]["version"] + "]"
@@ -260,21 +296,30 @@ class ProgramLogic:
 				if mode == 2:
 					try:
 						miss = int(miss)
-						miss = miss if miss < max_combo else 0
+						if miss < max_combo or miss >= 0:
+							miss = miss
+						else:
+							raise SyntaxError
 					except:
-						miss = 0
+						return "You MISSed something there"
 					try:
 						combo = int(combo)
-						combo = combo if combo <= max_combo else max_combo - miss
-						combo = combo if int(combo) >= math.floor(max_combo / (int(miss) + 1)) else math.floor(max_combo / (int(miss) + 1))
+						if combo <= max_combo and combo > 0:
+							combo = combo
+						else:
+							raise SyntaxError
 					except:
-						combo = max_combo - miss
+						return "You made a mistake with your combo!"
 					try:
 						acc = float(acc)
-						acc = acc if acc >= 0 and acc <= 100 else float(((max_combo - miss) / max_combo) * 100)  # and acc <= float(((max_combo - miss) / max_combo) * 100)
+						if acc >= 0 and acc <= 100:
+							acc = acc
+						else:
+							raise SyntaxError
 					except:
-						acc = float(((max_combo - miss) / max_combo) * 100)
+						return "Check your accuracy again, please"
 
+					acm_data_s[name] = [acc, combo, miss]
 					pp_vals = (str(self.calculatepp(beatmap_data[0], mode, acc=acc, combo=combo, miss=miss, mods=mods)), )
 					acccombomiss = str(acc) + "% " + str(combo) + "x " + str(miss) + "miss " + mods_name
 					end_props = str(round(float(beatmap_data[0]["difficultyrating"]), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data[0]["total_length"]))) + " AR" + str(beatmap_data[0]["diff_approach"]) + " MAX" + str(beatmap_data[0]["max_combo"])
@@ -282,7 +327,7 @@ class ProgramLogic:
 				elif mode == 3:
 					try:
 						score = int(score)
-						if score <= 1000000 or score >= 0:
+						if score <= 1000000 and score >= 0:
 							score = score
 						else:
 							raise SyntaxError
@@ -297,13 +342,87 @@ class ProgramLogic:
 					except:
 						return "Check your accuracy again, please"
 
+					acm_data_s[name] = [acc, score]
 					pp_vals = (str(self.calculatepp(beatmap_data[0], beatmap=beatmap, mode=mode, acc=acc, score=score, mods=mods)), )
 					accscore = str(acc) + "% " + str(score) + " " + mods_name
 					end_props = str(round(float(beatmap_data[0]["difficultyrating"]), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data[0]["total_length"]))) + " OD" + str(beatmap_data[0]["diff_overall"]) + " " + str(beatmap_data[0]["diff_size"]) + "key OBJ" + str(len(beatmap.hit_objects))
 					sent = artist_name + " | osu!mania | " + accscore + ": " + pp_vals[0] + "pp | " + end_props
+			# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 			elif ident == "mod":
-				pass
+				mods_name = ""
+				if name not in beatmap_data_s:
+					raise NpError
 
+				beatmap_data = beatmap_data_s[name]
+				if name not in acm_data_s:
+					pass
+				else:
+					acm_data = acm_data_s[name]
+				mods = 0
+
+				split_msg = message.split()
+				del split_msg[0]
+				if not split_msg:
+					raise MsgError
+				if split_msg[0].lower().find("hd") != -1:
+					mods += 8
+				if split_msg[0].lower().find("fl") != -1:
+					mods += 1024
+				if split_msg[0].lower().find("ez") != -1:
+					mods += 2
+				if split_msg[0].lower().find("nf") != -1:
+					mods += 1
+
+				if mods & 1 == 1:
+					mods_name += "NF"
+				if mods & 2 == 2:
+					mods_name += "EZ"
+				if mods & 8 == 8:
+					mods_name += "HD"
+				if mods & 1024 == 1024:
+					mods_name += "FL"
+				if mods == 0:
+					return "These mods are not supported yet!"
+
+				# Attribute testing
+				cur.execute("SELECT * FROM userdb WHERE user=?", (name,))
+				modedb = cur.fetchone()
+				if modedb is None:
+					return "Please set a mode with !set mode [catch|mania]"
+				else:
+					cur.execute("SELECT mode FROM userdb WHERE user=?", (name,))
+					mode = modedb[1]
+
+				# mode checking
+				if beatmap_data[0]["mode"] != "0":
+					mode = int(beatmap_data[0]["mode"])
+				beatmap_data[0] = self.get_b_data(config.api_key, beatmap_data[0]["beatmap_id"], mode)[0]
+
+				max_combo = int(beatmap_data[0]["max_combo"]) if beatmap_data[0]["max_combo"] is not None else "err"
+				artist_name = beatmap_data[0]["artist"] + " - " + beatmap_data[0]["title"] + " [" + beatmap_data[0]["version"] + "]"
+				l = slider.library.Library("/osulib")
+				beatmap = l.download(beatmap_id=int(beatmap_data[0]["beatmap_id"]))
+
+				mod_data_s[name] = mods
+				if mode == 2:
+					if acm_data in locals():
+						acc, combo, miss = acm_data
+					else:
+						acc, combo, miss = (100, beatmap_data[0]["max_combo"], 0)
+					pp_vals = (str(self.calculatepp(beatmap_data[0], mode, acc=acc, combo=combo, miss=miss, mods=mods)), )
+					acccombomiss = str(acc) + "% " + str(combo) + "x " + str(miss) + "miss " + mods_name
+					end_props = str(round(float(beatmap_data[0]["difficultyrating"]), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data[0]["total_length"]))) + " AR" + str(beatmap_data[0]["diff_approach"]) + " MAX" + str(beatmap_data[0]["max_combo"])
+					sent = artist_name + " | osu!catch | " + acccombomiss + ": " + pp_vals[0] + "pp | " + end_props
+				elif mode == 3:
+					if acm_data in locals():
+						acc, score = acm_data
+					else:
+						acc, score = (100, 1000000)
+					pp_vals = (str(self.calculatepp(beatmap_data[0], beatmap=beatmap, mode=mode, acc=acc, score=score, mods=mods)), )
+					accscore = str(acc) + "% " + str(score) + " " + mods_name
+					end_props = str(round(float(beatmap_data[0]["difficultyrating"]), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data[0]["total_length"]))) + " OD" + str(beatmap_data[0]["diff_overall"]) + " " + str(beatmap_data[0]["diff_size"]) + "key OBJ" + str(len(beatmap.hit_objects))
+					sent = artist_name + " | osu!mania | " + accscore + ": " + pp_vals[0] + "pp | " + end_props
+			# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 			return sent
 
 		except IndexError:
@@ -369,10 +488,10 @@ class Bot(irc.IRCClient):
 
 				# ~~~~~~~~~~~~~~~~~~~~~~~~ THE COMMANDS ~~~~~~~~~~~~~~~~~~~~~~~~
 				if command == "set":
-					pass
+					msg = msg.split("!set ")[1]
+					self.msg(user, self.logic.setpref(msg, user))
 				elif command == "acc":
 					try:
-						attr = msg.split(" ", 1)[1]
 						sentmsg = self.logic.sendpp(msg, user, "acm")
 						if sentmsg:
 							self.msg(user, sentmsg)
@@ -381,7 +500,14 @@ class Bot(irc.IRCClient):
 						traceback.print_exc(file=open("err.log", "a"))
 						self.msg(user, "You didn't give me accuracy, combo, or misses?")
 				elif command == "with":
-					self.msg(user, "Command doesn't work yet, stay tuned!")
+					try:
+						sentmsg = self.logic.sendpp(msg, user, "mod")
+						if sentmsg:
+							self.msg(user, sentmsg)
+							self.logic.savetofile(sentmsg, open("sentcommands.txt", "a"))
+					except:
+						traceback.print_exc(file=open("err.log", "a"))
+						self.msg(user, "No mods?")
 				elif command == "h":
 					self.msg(user, "Need help? Check https://github.com/de-odex/aEverrBot/wiki for commands. ~~Most commands work now.~~")
 				elif command == "r":

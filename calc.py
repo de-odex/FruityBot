@@ -26,7 +26,7 @@ class CatchTheBeat:
 		try:
 			if mods & 8 == 8:
 				finalpp *= 1.05 + 0.075 * (10.0 - min(10.0, ar))
-			if mods & 1024 == 1024:
+			elif mods & 1024 == 1024:
 				finalpp *= 1.35 * (0.95 + 0.4 * min(1.0, max_combo / 3000.0) + (math.log(max_combo / 3000.0, 10) * 0.5 if max_combo > 3000 else 0.0))
 			# if mods == 1:
 			# 	finalpp *= 0.90
@@ -54,5 +54,16 @@ class Mania:
 		accfinal = math.pow(math.pow((150 / pfwdw) * math.pow(acc / 100, 16), 1.8) * 2.5 * min(1.15, math.pow(objectcount / 1500, 0.3)), 1.1)
 		strainfinal = math.pow(strainbase * strainmult, 1.1)
 		finalpp = math.pow(accfinal + strainfinal, 1 / 1.1) * 1.1
+		try:
+			if mods & 2 == 2:
+				finalpp *= 0.5
+			elif mods & 1 == 1:
+				finalpp *= 0.9
+			else:
+				finalpp *= 1.1
+		except:
+			finalpp *= 1.1
+		# if mods == 1:
+		# 	finalpp *= 0.90
 
 		return float(round(finalpp, 3))
