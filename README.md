@@ -1,5 +1,5 @@
 # FruitBot
-Tillerino for osu!catch (soon to be for other modes)
+Tillerino for osu!catch and osu!mania (soon to be for osu!taiko)
 
 I have no idea how to write a README.
 Thanks iRevi for the name.
