@@ -272,7 +272,7 @@ class ProgramLogic:
 				if mods & 1024 == 1024:
 					mods_name += "FL"
 				if mods == 0:
-					return "These mods are not supported yet!"
+					mods_name = "NoMod"
 
 				# Attribute testing
 				cur.execute("SELECT * FROM userdb WHERE user=?", (name,))
