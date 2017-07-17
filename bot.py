@@ -58,7 +58,7 @@ class ProgramLogic:
 	def __init__(self, file):
 		self.file = file
 		self.repfile = open("reports.log", "a")
-		self.UPDATE_MSG = "eyo, its boterino here with an update ([https://aeverr.s-ul.eu/CpdBefOU sic]). Added mod support (HD FL for catch, NF EZ for mania). Added Mania Gamemode support. Change mode with !set mode [catch|mania]. Suspect to bugs, please help me test"
+		self.UPDATE_MSG = "eyo, its boterino here with an update ([https://aeverr.s-ul.eu/CpdBefOU sic]). SORRY FOR THE DOWNTIME, I was away on a family trip."
 		self.FIRST_TIME_MSG = "Welcome, and thanks for using my bot! Check out https://github.com/de-odex/aEverrBot/wiki for commands. !botreport to report a bug."
 
 	def log(self, message):
@@ -320,7 +320,7 @@ class ProgramLogic:
 						return "Check your accuracy again, please"
 
 					acm_data_s[name] = [acc, combo, miss]
-					pp_vals = (str(self.calculatepp(beatmap_data[0], mode, acc=acc, combo=combo, miss=miss, mods=mods)), )
+					pp_vals = (str(self.calculatepp(beatmap_data[0], mode, acc=acc, max_player_combo=combo, miss=miss, mods=mods)), )
 					acccombomiss = str(acc) + "% " + str(combo) + "x " + str(miss) + "miss " + mods_name
 					end_props = str(round(float(beatmap_data[0]["difficultyrating"]), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data[0]["total_length"]))) + " AR" + str(beatmap_data[0]["diff_approach"]) + " MAX" + str(beatmap_data[0]["max_combo"])
 					sent = artist_name + " | osu!catch | " + acccombomiss + ": " + pp_vals[0] + "pp | " + end_props
