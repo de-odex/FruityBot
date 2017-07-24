@@ -389,7 +389,7 @@ paket-files/
 
 # Project Specific
 config.py
-*.wav
+*.db
 *.txt
 *.sln
 *.pyperf
