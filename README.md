@@ -1,4 +1,4 @@
-# FruitBot
+# FruityBot
 Tillerino for osu!catch and osu!mania (soon to be for osu!taiko)
 
 I have no idea how to write a README.
