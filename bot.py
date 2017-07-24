@@ -262,6 +262,10 @@ class ProgramLogic:
 
 				if acc == 'hi' and combo == 'hi' and miss == 'hi' and score == 'hi':
 					raise AttrError
+				if combo == 'hi':
+					combo = int(beatmap_data[0]["max_combo"])
+				if miss == 'hi':
+					miss = 0
 
 				if mods & 1 == 1:
 					mods_name += "NF"
@@ -304,7 +308,7 @@ class ProgramLogic:
 						return "You MISSed something there"
 					try:
 						combo = int(combo)
-						if combo <= max_combo and combo > 0:
+						if combo <= max_combo and combo >= 0:
 							combo = combo
 						else:
 							raise SyntaxError
