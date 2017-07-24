@@ -9,5 +9,5 @@ Thanks iRevi for the name.
 1. Clone the repository
 2. Install the dependencies: 
    * slider
-3. Create a file named "config.py" in the same directory (see config.py.example)
+3. Create a file named "config.py" in the same directory (see config.py.template)
 4. Run "bot.py"
