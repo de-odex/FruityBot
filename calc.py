@@ -5,11 +5,11 @@ class CatchTheBeat:
 	def __init__(self):
 		pass
 
-	def calculatepp(self, osubdata, acc=100, max_player_combo=0, miss=0, mods=0):
-		stars = float(osubdata["difficultyrating"])
-		max_combo = int(osubdata["max_combo"])
-		max_player_combo = int(osubdata["max_combo"]) if max_player_combo == 0 else max_player_combo
-		ar = float(osubdata["diff_approach"])
+	def calculatepp(self, osubdata, osubdata_api, acc=100, max_player_combo=0, miss=0, mods=0):
+		stars = float(osubdata_api.star_rating)
+		max_combo = int(osubdata.max_combo)
+		max_player_combo = int(osubdata.max_combo) if max_player_combo == 0 else max_player_combo
+		ar = float(osubdata.approach_rate)
 
 		finalpp = pow(((5 * max(1, stars / 0.0049)) - 4), 2) / 100000
 		finalpp *= 0.95 + 0.4 * min(1.0, max_combo / 3000.0) + (math.log(max_combo / 3000.0, 10) * 0.5 if max_combo > 3000 else 0.0)
@@ -40,11 +40,11 @@ class Mania:
 	def __init__(self):
 		pass
 
-	def calculatepp(self, osubdata, beatmap, acc=100, score=1000000, mods=0):
+	def calculatepp(self, osubdata, osubdata_api, acc=100, score=1000000, mods=0):
 		#  Thanks Error- for the formula
-		stars = float(osubdata["difficultyrating"])
-		od = float(osubdata["diff_overall"])
-		objectcount = len(beatmap.hit_objects)
+		stars = float(osubdata_api.star_rating)
+		od = float(osubdata.overall_difficulty)
+		objectcount = len(osubdata.hit_objects)
 
 		pfwdw = 64 - 3 * od
 		strain1 = math.pow(5 * max(1, stars / 0.0825) - 4, 3) / 110000
@@ -66,4 +66,54 @@ class Mania:
 		# if mods == 1:
 		# 	finalpp *= 0.90
 
+		return float(round(finalpp, 3))
+
+
+class Taiko:
+	def __init__(self):
+		pass
+
+	def calculatepp(self, osubdata, osubdata_api, acc=100, miss=0, mods=0):
+		stars = float(osubdata_api.star_rating)
+		max_combo = int(osubdata.max_combo)
+		od = float(osubdata.overall_difficulty)
+		pfhit = max_combo - miss
+
+		try:
+			if mods & 2 == 2:
+				od *= 0.5
+			elif mods & 16 == 16:
+				od *= 1.4
+			else:
+				pass
+		except:
+			pass
+
+		maxod = 20
+		minod = 50
+		result = minod + (maxod - minod) * od / 10
+		result = math.floor(result) - 0.5
+		pfwdw = round(result, 2)
+
+		strain = (math.pow(max(1, stars / 0.0075) * 5 - 4, 2) / 100000) * (min(1, max_combo / 1500) * 0.1 + 1)
+		strain *= math.pow(0.985, miss)
+		strain *= min(math.pow(pfhit, 0.5) / math.pow(max_combo, 0.5), 1)
+		strain *= acc / 100
+		accfinal = math.pow(150 / pfwdw, 1.1) * math.pow(acc / 100, 15) * 22
+		accfinal *= min(math.pow(max_combo / 1500, 0.3), 1.15)
+
+		modmult = 1.1
+		try:
+			if mods & 8 == 8:
+				modmult *= 1.1
+				strain *= 1.025
+			elif mods & 1 == 1:
+				modmult *= 0.9
+			elif mods & 1024 == 1024:
+				strain *= 1.05 * min(1, max_combo / 1500) * 0.1 + 1
+			else:
+				pass
+		except:
+			pass
+		finalpp = math.pow(math.pow(strain, 1.1) + math.pow(accfinal, 1.1), 1.0 / 1.1) * modmult
 		return float(round(finalpp, 3))

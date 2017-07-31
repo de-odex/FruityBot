@@ -8,7 +8,7 @@ from twisted.internet import reactor, protocol
 from twisted.python import log
 
 # system imports
-import time, sys, requests, re, urllib, math, traceback, slider, sqlite3  # sqlite for saving user prefs
+import time, sys, re, urllib, traceback, slider, sqlite3, os, requests  # sqlite for saving user prefs
 
 try:
 	import config, calc
@@ -17,10 +17,17 @@ except ImportError:
 	input()
 	sys.exit()
 
+# user database for settings
 userdb = sqlite3.connect('userpref.db')
-cur = userdb.cursor()
+upcur = userdb.cursor()
 userdb.execute("CREATE TABLE IF NOT EXISTS userdb (user int PRIMARY KEY, mode int)")
 userdb.commit()
+
+# Library creation if does not exist
+if not os.path.exists(config.librarydir + "/osulib"):
+	os.makedirs(config.librarydir + "/osulib")
+osu_library = slider.library.Library(config.librarydir + "/osulib")
+osu_library.create_db(config.librarydir + "/osulib")
 
 beatmap_data_s = {}
 acm_data_s = {}
@@ -58,8 +65,9 @@ class ProgramLogic:
 	def __init__(self, file):
 		self.file = file
 		self.repfile = open("reports.log", "a")
-		self.UPDATE_MSG = "eyo, its boterino here with an update ([https://aeverr.s-ul.eu/CpdBefOU sic]). SORRY FOR THE DOWNTIME, I was away on a family trip."
+		self.UPDATE_MSG = "eyo, its boterino here with an update ([https://aeverr.s-ul.eu/CpdBefOU sic]). I've made a semi-major overhaul, please report bugs."
 		self.FIRST_TIME_MSG = "Welcome, and thanks for using my bot! Check out https://github.com/de-odex/aEverrBot/wiki for commands. !botreport to report a bug."
+		self.osu_api_client = slider.client.Client(osu_library, config.api_key)
 
 	def log(self, message):
 		"""Write a message to the file."""
@@ -90,49 +98,8 @@ class ProgramLogic:
 	def report(self, msg):
 		self.savetofile(msg, self.repfile)
 
-	# api ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-	def get_b_data(self, api_key, beatmap_id, mode=None):
-		# request for data
-		if not mode:
-			parameters = {
-				"k": api_key,
-				"b": beatmap_id,
-				"a": 1  # allow converts
-			}
-		elif mode:
-			parameters = {
-				"k": api_key,
-				"b": beatmap_id,
-				"a": 1,  # allow converts
-				"m": mode  # gamemode
-			}
-		osuresponse = requests.get("https://osu.ppy.sh/api/get_beatmaps", params=parameters)
-		return osuresponse.json()
-
-	def get_tu_data(self, api_key, user_id):  # unused
-		# request for data
-		parameters = {
-			"k": api_key,
-			"u": user_id,
-			"m": 2,  # pick ctb game mode
-			"limit": 25  # limit to number
-		}
-		osuresponse = requests.get("https://osu.ppy.sh/api/get_user_best", params=parameters)
-		return osuresponse.json()
-
-	def get_tb_data(self, api_key, beatmap_id):  # unused
-		# request for data
-		parameters = {
-			"k": api_key,
-			"b": beatmap_id,
-			"m": 2,  # pick ctb game mode
-			"limit": 100  # limit to number
-		}
-		osuresponse = requests.get("https://osu.ppy.sh/api/get_scores", params=parameters)
-		return osuresponse.json()
-
 	# calc ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-	def calculatepp(self, osubdata, mode, beatmap=0, **kwargs):
+	def calculatepp(self, osubdata, osubdata_api, mode, beatmap=0, **kwargs):
 		# kwarg setting
 
 		acc = kwargs.get('acc', 100)
@@ -143,10 +110,13 @@ class ProgramLogic:
 		# pp returning
 		if mode == 2:
 			r = calc.CatchTheBeat()
-			return r.calculatepp(acc=acc, max_player_combo=max_player_combo, miss=miss, mods=mods, osubdata=osubdata)
+			return r.calculatepp(acc=acc, max_player_combo=max_player_combo, miss=miss, mods=mods, osubdata=osubdata, osubdata_api=osubdata_api)
 		elif mode == 3:
 			r = calc.Mania()
-			return r.calculatepp(acc=acc, score=score, mods=mods, osubdata=osubdata, beatmap=beatmap)
+			return r.calculatepp(acc=acc, score=score, mods=mods, osubdata=osubdata, osubdata_api=osubdata_api)
+		elif mode == 1:
+			r = calc.Taiko()
+			return r.calculatepp(acc=acc, miss=miss, mods=mods, osubdata=osubdata, osubdata_api=osubdata_api)
 
 	# message sending ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 	def sendstore(self, message, name, file1):
@@ -164,19 +134,21 @@ class ProgramLogic:
 			return False
 
 	def setpref(self, message, name):
-		global userdb, cur
+		global userdb, upcur
 		split_msg = message.split()
 
 		if split_msg[0] == "mode":
-			if split_msg[1] == "catch":
+			if split_msg[1].lower() == "catch":
 				mode = 2
-			elif split_msg[1] == "mania":
+			elif split_msg[1].lower() == "mania":
 				mode = 3
+			elif split_msg[1].lower() == "taiko":
+				mode = 1
 			else:
 				return "Invalid command"
 
-			cur.execute("SELECT * FROM userdb WHERE user=?", (name,))
-			if cur.fetchone() is None:
+			upcur.execute("SELECT * FROM userdb WHERE user=?", (name,))
+			if upcur.fetchone() is None:
 				userdb.execute("INSERT INTO userdb (user, mode) VALUES (?,?)", (name, mode))
 				userdb.commit()
 			else:
@@ -187,7 +159,7 @@ class ProgramLogic:
 			return "Invalid command"
 
 	def sendpp(self, message, name, ident="np"):
-		global beatmap_data_s, mod_data_s, userdb, cur
+		global beatmap_data_s, mod_data_s, userdb, upcur, osu_library
 		try:
 			# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 			if ident == "np":
@@ -197,37 +169,39 @@ class ProgramLogic:
 				beatmap_id = urllib.parse.urlparse(link[0]).path.split("/")[2]
 				if urllib.parse.urlparse(link[0]).path.split("/")[1] != "b":
 					return "This is a beatmapset, not a beatmap"
-				beatmap_data = self.get_b_data(config.api_key, beatmap_id)
-				if not beatmap_data:
+				beatmap_id = beatmap_id.split("&")[0]
+				beatmap_data = osu_library.lookup_by_id(beatmap_id, download=True, save=True)
+				beatmap_data_api = self.osu_api_client.beatmap(beatmap_id=beatmap_id, include_converted_beatmaps=True)
+				if not beatmap_data_api:
 					raise ModeError
 
 				# mode checking
-				if beatmap_data[0]["mode"] != "0":
-					mode = int(beatmap_data[0]["mode"])
+				if int(beatmap_data.mode) != 0:
+					mode = int(beatmap_data.mode)
 				else:
-					cur.execute("SELECT * FROM userdb WHERE user=?", (name,))
-					modedb = cur.fetchone()
+					upcur.execute("SELECT * FROM userdb WHERE user=?", (name,))
+					modedb = upcur.fetchone()
 					if modedb is None:
 						return "Please set a mode with !set mode [catch|mania]"
 					else:
-						cur.execute("SELECT mode FROM userdb WHERE user=?", (name,))
+						upcur.execute("SELECT mode FROM userdb WHERE user=?", (name,))
 						mode = modedb[1]
-				beatmap_data[0] = self.get_b_data(config.api_key, beatmap_data[0]["beatmap_id"], mode)[0]
-				beatmap_data_s[name] = beatmap_data
+					beatmap_data_api = self.osu_api_client.beatmap(beatmap_id=int(beatmap_id), include_converted_beatmaps=1, game_mode=slider.game_mode.GameMode(mode))
+				beatmap_data_s[name] = (beatmap_data, beatmap_data_api, mode, beatmap_id)
+				artist_name = beatmap_data.artist + " - " + beatmap_data.title + " [" + beatmap_data.version + "]"
 
 				if mode == 2:
-					artist_name = beatmap_data[0]["artist"] + " - " + beatmap_data[0]["title"] + " [" + beatmap_data[0]["version"] + "]"
-					pp_vals = (str(self.calculatepp(beatmap_data[0], mode)), str(self.calculatepp(beatmap_data[0], mode, acc=99.5)), str(self.calculatepp(beatmap_data[0], mode, acc=99)), str(self.calculatepp(beatmap_data[0], mode, acc=98.5)))
-					end_props = str(round(float(beatmap_data[0]["difficultyrating"]), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data[0]["total_length"]))) + " AR" + str(beatmap_data[0]["diff_approach"]) + " MAX" + str(beatmap_data[0]["max_combo"])
+					pp_vals = (str(self.calculatepp(beatmap_data, beatmap_data_api, mode)), str(self.calculatepp(beatmap_data, beatmap_data_api, mode, acc=99.5)), str(self.calculatepp(beatmap_data, beatmap_data_api, mode, acc=99)), str(self.calculatepp(beatmap_data, beatmap_data_api, mode, acc=98.5)))
+					end_props = str(round(float(beatmap_data_api.star_rating), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data_api.hit_length.seconds))) + " AR" + str(beatmap_data.approach_rate) + " MAX" + str(beatmap_data_api.max_combo)
 					sent = artist_name + " | osu!catch | SS: " + pp_vals[0] + "pp | 99.5% FC: " + pp_vals[1] + "pp | 99% FC: " + pp_vals[2] + "pp | 98.5% FC: " + pp_vals[3] + "pp | " + end_props
 				elif mode == 3:
-					l = slider.library.Library("/osulib")
-					beatmap = l.download(beatmap_id=int(beatmap_data[0]["beatmap_id"]))
-
-					artist_name = beatmap_data[0]["artist"] + " - " + beatmap_data[0]["title"] + " [" + beatmap_data[0]["version"] + "]"
-					pp_vals = (str(self.calculatepp(beatmap_data[0], beatmap=beatmap, mode=mode)), str(self.calculatepp(beatmap_data[0], beatmap=beatmap, mode=mode, acc=99, score=970000)), str(self.calculatepp(beatmap_data[0], beatmap=beatmap, mode=mode, acc=97, score=900000)))
-					end_props = str(round(float(beatmap_data[0]["difficultyrating"]), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data[0]["total_length"]))) + " OD" + str(beatmap_data[0]["diff_overall"]) + " " + str(beatmap_data[0]["diff_size"]) + "key OBJ" + str(len(beatmap.hit_objects))
+					pp_vals = (str(self.calculatepp(beatmap_data, beatmap_data_api, mode=mode)), str(self.calculatepp(beatmap_data, beatmap_data_api, mode=mode, acc=99, score=970000)), str(self.calculatepp(beatmap_data, beatmap_data_api, mode=mode, acc=97, score=900000)))
+					end_props = str(round(float(beatmap_data_api.star_rating), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data_api.hit_length.seconds))) + " OD" + str(beatmap_data.overall_difficulty) + " " + str(beatmap_data.circle_size) + "key OBJ" + str(len(beatmap_data.hit_objects))
 					sent = artist_name + " | osu!mania | SS: " + pp_vals[0] + "pp | 99% 970k: " + pp_vals[1] + "pp | 97% 900k: " + pp_vals[2] + "pp | " + end_props
+				elif mode == 1:
+					pp_vals = (str(self.calculatepp(beatmap_data, beatmap_data_api, mode=mode)), str(self.calculatepp(beatmap_data, beatmap_data_api, mode=mode, acc=99)), str(self.calculatepp(beatmap_data, beatmap_data_api, mode=mode, acc=98)))
+					end_props = str(round(float(beatmap_data_api.star_rating), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data_api.hit_length.seconds))) + " OD" + str(beatmap_data.overall_difficulty) + " MAX" + str(beatmap_data_api.max_combo)
+					sent = artist_name + " | osu!taiko | SS: " + pp_vals[0] + "pp | 99% FC: " + pp_vals[1] + "pp | 98% FC: " + pp_vals[2] + "pp | " + end_props
 			# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 			elif ident == "acm":
 				mods_name = ""
@@ -238,7 +212,10 @@ class ProgramLogic:
 				else:
 					mods = mod_data_s[name]
 
-				beatmap_data = beatmap_data_s[name]
+				beatmap_data = beatmap_data_s[name][0]
+				beatmap_data_api = beatmap_data_s[name][1]
+				mode_api = beatmap_data_s[name][2]
+				beatmap_id = beatmap_data_s[name][3]
 
 				split_msg = message.split()
 				del split_msg[0]
@@ -263,7 +240,7 @@ class ProgramLogic:
 				if acc == 'hi' and combo == 'hi' and miss == 'hi' and score == 'hi':
 					raise AttrError
 				if combo == 'hi':
-					combo = int(beatmap_data[0]["max_combo"])
+					combo = int(beatmap_data_api.max_combo)
 				if miss == 'hi':
 					miss = 0
 
@@ -279,23 +256,24 @@ class ProgramLogic:
 					mods_name = "NoMod"
 
 				# Attribute testing
-				cur.execute("SELECT * FROM userdb WHERE user=?", (name,))
-				modedb = cur.fetchone()
-				if modedb is None:
-					return "Please set a mode with !set mode [catch|mania]"
-				else:
-					cur.execute("SELECT mode FROM userdb WHERE user=?", (name,))
-					mode = modedb[1]
 
 				# mode checking
-				if beatmap_data[0]["mode"] != "0":
-					mode = int(beatmap_data[0]["mode"])
-				beatmap_data[0] = self.get_b_data(config.api_key, beatmap_data[0]["beatmap_id"], mode)[0]
+				if int(beatmap_data.mode) != 0:
+					mode = int(beatmap_data.mode)
+				else:
+					upcur.execute("SELECT * FROM userdb WHERE user=?", (name,))
+					modedb = upcur.fetchone()
+					if modedb is None:
+						return "Please set a mode with !set mode [catch|mania]"
+					else:
+						upcur.execute("SELECT mode FROM userdb WHERE user=?", (name,))
+						mode = modedb[1]
 
-				max_combo = int(beatmap_data[0]["max_combo"]) if beatmap_data[0]["max_combo"] is not None else "err"
-				artist_name = beatmap_data[0]["artist"] + " - " + beatmap_data[0]["title"] + " [" + beatmap_data[0]["version"] + "]"
-				l = slider.library.Library("/osulib")
-				beatmap = l.download(beatmap_id=int(beatmap_data[0]["beatmap_id"]))
+				if mode_api != mode:
+					beatmap_data_api = self.osu_api_client.beatmap(beatmap_id=beatmap_id, include_converted_beatmaps=1, game_mode=slider.game_mode.GameMode(mode))
+
+				max_combo = int(beatmap_data_api.max_combo) if beatmap_data_api.max_combo is not None else "err"
+				artist_name = beatmap_data.artist + " - " + beatmap_data.title + " [" + beatmap_data.version + "]"
 
 				if mode == 2:
 					try:
@@ -324,9 +302,9 @@ class ProgramLogic:
 						return "Check your accuracy again, please"
 
 					acm_data_s[name] = [acc, combo, miss]
-					pp_vals = (str(self.calculatepp(beatmap_data[0], mode, acc=acc, max_player_combo=combo, miss=miss, mods=mods)), )
+					pp_vals = (str(self.calculatepp(beatmap_data, beatmap_data_api, mode, acc=acc, max_player_combo=combo, miss=miss, mods=mods)), )
 					acccombomiss = str(acc) + "% " + str(combo) + "x " + str(miss) + "miss " + mods_name
-					end_props = str(round(float(beatmap_data[0]["difficultyrating"]), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data[0]["total_length"]))) + " AR" + str(beatmap_data[0]["diff_approach"]) + " MAX" + str(beatmap_data[0]["max_combo"])
+					end_props = str(round(float(beatmap_data_api.star_rating), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data_api.total_length))) + " AR" + str(beatmap_data.approach_rate) + " MAX" + str(beatmap_data_api.max_combo)
 					sent = artist_name + " | osu!catch | " + acccombomiss + ": " + pp_vals[0] + "pp | " + end_props
 				elif mode == 3:
 					try:
@@ -347,17 +325,44 @@ class ProgramLogic:
 						return "Check your accuracy again, please"
 
 					acm_data_s[name] = [acc, score]
-					pp_vals = (str(self.calculatepp(beatmap_data[0], beatmap=beatmap, mode=mode, acc=acc, score=score, mods=mods)), )
+					pp_vals = (str(self.calculatepp(beatmap_data, beatmap_data_api, mode=mode, acc=acc, score=score, mods=mods)), )
 					accscore = str(acc) + "% " + str(score) + " " + mods_name
-					end_props = str(round(float(beatmap_data[0]["difficultyrating"]), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data[0]["total_length"]))) + " OD" + str(beatmap_data[0]["diff_overall"]) + " " + str(beatmap_data[0]["diff_size"]) + "key OBJ" + str(len(beatmap.hit_objects))
+					end_props = str(round(float(beatmap_data_api.star_rating), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data_api.total_length))) + " OD" + str(beatmap_data.overall_difficulty) + " " + str(beatmap_data.circle_size) + "key OBJ" + str(len(beatmap_data.hit_objects))
 					sent = artist_name + " | osu!mania | " + accscore + ": " + pp_vals[0] + "pp | " + end_props
+				elif mode == 1:
+					try:
+						miss = int(miss)
+						if miss < max_combo or miss >= 0:
+							miss = miss
+						else:
+							raise SyntaxError
+					except:
+						return "You MISSed something there"
+					try:
+						acc = float(acc)
+						if acc >= 0 and acc <= 100:  # and acc <= float(((max_combo - miss) / max_combo) * 100)
+							acc = acc
+						else:
+							raise SyntaxError
+					except:
+						return "Check your accuracy again, please"
+
+					acm_data_s[name] = [acc, miss]
+					pp_vals = (str(self.calculatepp(beatmap_data, beatmap_data_api, mode=mode, acc=acc, miss=miss, mods=mods)), )
+					accmiss = str(acc) + "% " + str(miss) + "miss " + mods_name
+					end_props = str(round(float(beatmap_data_api.star_rating), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data_api.hit_length.seconds))) + " OD" + str(beatmap_data.overall_difficulty) + " MAX" + str(beatmap_data_api.max_combo)
+					sent = artist_name + " | osu!taiko | " + accmiss + ": " + pp_vals[0] + "pp | " + end_props
 			# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 			elif ident == "mod":
 				mods_name = ""
 				if name not in beatmap_data_s:
 					raise NpError
 
-				beatmap_data = beatmap_data_s[name]
+				beatmap_data = beatmap_data_s[name][0]
+				beatmap_data_api = beatmap_data_s[name][1]
+				mode_api = beatmap_data_s[name][2]
+				beatmap_id = beatmap_data_s[name][3]
+
 				if name not in acm_data_s:
 					pass
 				else:
@@ -383,49 +388,75 @@ class ProgramLogic:
 					mods_name += "EZ"
 				if mods & 8 == 8:
 					mods_name += "HD"
+				if mods & 16 == 16:
+					mods_name += "HR"
 				if mods & 1024 == 1024:
 					mods_name += "FL"
 				if mods == 0:
 					return "These mods are not supported yet!"
 
 				# Attribute testing
-				cur.execute("SELECT * FROM userdb WHERE user=?", (name,))
-				modedb = cur.fetchone()
-				if modedb is None:
-					return "Please set a mode with !set mode [catch|mania]"
-				else:
-					cur.execute("SELECT mode FROM userdb WHERE user=?", (name,))
-					mode = modedb[1]
 
 				# mode checking
-				if beatmap_data[0]["mode"] != "0":
-					mode = int(beatmap_data[0]["mode"])
-				beatmap_data[0] = self.get_b_data(config.api_key, beatmap_data[0]["beatmap_id"], mode)[0]
+				if int(beatmap_data.mode) != 0:
+					mode = int(beatmap_data.mode)
+				else:
+					upcur.execute("SELECT * FROM userdb WHERE user=?", (name,))
+					modedb = upcur.fetchone()
+					if modedb is None:
+						return "Please set a mode with !set mode [catch|mania]"
+					else:
+						upcur.execute("SELECT mode FROM userdb WHERE user=?", (name,))
+						mode = modedb[1]
 
-				max_combo = int(beatmap_data[0]["max_combo"]) if beatmap_data[0]["max_combo"] is not None else "err"
-				artist_name = beatmap_data[0]["artist"] + " - " + beatmap_data[0]["title"] + " [" + beatmap_data[0]["version"] + "]"
-				l = slider.library.Library("/osulib")
-				beatmap = l.download(beatmap_id=int(beatmap_data[0]["beatmap_id"]))
+				if mode_api != mode:
+					beatmap_data_api = self.osu_api_client.beatmap(beatmap_id=beatmap_id, include_converted_beatmaps=1, game_mode=slider.game_mode.GameMode(mode))
+
+				max_combo = int(beatmap_data_api.max_combo) if beatmap_data_api.max_combo is not None else "err"
+				artist_name = beatmap_data.artist + " - " + beatmap_data.title + " [" + beatmap_data.version + "]"
 
 				mod_data_s[name] = mods
-				if mode == 2:
+				if mode == 2:  # hd and fl only
+					if mods & 1 == 1:
+						return "These mods are not supported yet!"
+					if mods & 2 == 2:
+						return "These mods are not supported yet!"
+					if mods & 16 == 16:
+						return "These mods are not supported yet!"
+
 					if acm_data in locals():
 						acc, combo, miss = acm_data
 					else:
-						acc, combo, miss = (100, beatmap_data[0]["max_combo"], 0)
-					pp_vals = (str(self.calculatepp(beatmap_data[0], mode, acc=acc, combo=combo, miss=miss, mods=mods)), )
+						acc, combo, miss = (100, beatmap_data_api.max_combo, 0)
+					pp_vals = (str(self.calculatepp(beatmap_data, beatmap_data_api, mode, acc=acc, combo=combo, miss=miss, mods=mods)), )
 					acccombomiss = str(acc) + "% " + str(combo) + "x " + str(miss) + "miss " + mods_name
-					end_props = str(round(float(beatmap_data[0]["difficultyrating"]), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data[0]["total_length"]))) + " AR" + str(beatmap_data[0]["diff_approach"]) + " MAX" + str(beatmap_data[0]["max_combo"])
+					end_props = str(round(float(beatmap_data_api.star_rating), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data_api.total_length))) + " AR" + str(beatmap_data.approach_rate) + " MAX" + str(beatmap_data_api.max_combo)
 					sent = artist_name + " | osu!catch | " + acccombomiss + ": " + pp_vals[0] + "pp | " + end_props
-				elif mode == 3:
+				elif mode == 3:  # nf and ez only
+					if mods & 8 == 8:
+						return "These mods are not supported yet!"
+					if mods & 1024 == 1024:
+						return "These mods are not supported yet!"
+					if mods & 16 == 16:
+						return "These mods are not supported yet!"
+
 					if acm_data in locals():
 						acc, score = acm_data
 					else:
 						acc, score = (100, 1000000)
-					pp_vals = (str(self.calculatepp(beatmap_data[0], beatmap=beatmap, mode=mode, acc=acc, score=score, mods=mods)), )
+					pp_vals = (str(self.calculatepp(beatmap_data, beatmap_data_api, mode=mode, acc=acc, score=score, mods=mods)), )
 					accscore = str(acc) + "% " + str(score) + " " + mods_name
-					end_props = str(round(float(beatmap_data[0]["difficultyrating"]), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data[0]["total_length"]))) + " OD" + str(beatmap_data[0]["diff_overall"]) + " " + str(beatmap_data[0]["diff_size"]) + "key OBJ" + str(len(beatmap.hit_objects))
+					end_props = str(round(float(beatmap_data_api.star_rating), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data_api.total_length))) + " OD" + str(beatmap_data.overall_difficulty) + " " + str(beatmap_data.circle_size) + "key OBJ" + str(len(beatmap_data.hit_objects))
 					sent = artist_name + " | osu!mania | " + accscore + ": " + pp_vals[0] + "pp | " + end_props
+				elif mode == 1:  # hd and fl only
+					if acm_data in locals():
+						acc, miss = acm_data
+					else:
+						acc, miss = (100, 0)
+					pp_vals = (str(self.calculatepp(beatmap_data, beatmap_data_api, mode, acc=acc, miss=miss, mods=mods)), )
+					accmiss = str(acc) + "% " + str(miss) + "miss " + mods_name
+					end_props = str(round(float(beatmap_data_api.star_rating), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data_api.hit_length.seconds))) + " OD" + str(beatmap_data.overall_difficulty) + " MAX" + str(beatmap_data_api.max_combo)
+					sent = artist_name + " | osu!taiko | " + accmiss + ": " + pp_vals[0] + "pp | " + end_props
 			# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 			return sent
 
