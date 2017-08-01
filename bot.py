@@ -8,7 +8,7 @@ from twisted.internet import reactor, protocol
 from twisted.python import log
 
 # system imports
-import time, sys, re, urllib, traceback, slider, sqlite3, os, requests  # sqlite for saving user prefs
+import time, sys, re, urllib, traceback, slider, sqlite3, os, requests, pathlib  # sqlite for saving user prefs
 
 try:
 	import config, calc
@@ -24,10 +24,14 @@ userdb.execute("CREATE TABLE IF NOT EXISTS userdb (user int PRIMARY KEY, mode in
 userdb.commit()
 
 # Library creation if does not exist
-if not os.path.exists(config.librarydir + "/osulib"):
-	os.makedirs(config.librarydir + "/osulib")
-osu_library = slider.library.Library(config.librarydir + "/osulib")
-osu_library.create_db(config.librarydir + "/osulib")
+libdir = pathlib.Path("/osulib")
+
+if not libdir.exists():
+	os.makedirs(libdir)
+	print("Created osu! library")
+	osu_library = slider.Library.create_db(libdir)
+else:
+	osu_library = slider.library.Library(libdir)
 
 beatmap_data_s = {}
 acm_data_s = {}
@@ -65,7 +69,7 @@ class ProgramLogic:
 	def __init__(self, file):
 		self.file = file
 		self.repfile = open("reports.log", "a")
-		self.UPDATE_MSG = "eyo, its boterino here with an update ([https://aeverr.s-ul.eu/CpdBefOU sic]). I've made a semi-major overhaul, please report bugs."
+		self.UPDATE_MSG = "eyo, its boterino here with an update ([https://aeverr.s-ul.eu/CpdBefOU sic]). All non-standard modes are now supported. See [https://github.com/de-odex/FruityBot/wiki/Mods wiki:Mods] for a mod list"
 		self.FIRST_TIME_MSG = "Welcome, and thanks for using my bot! Check out https://github.com/de-odex/aEverrBot/wiki for commands. !botreport to report a bug."
 		self.osu_api_client = slider.client.Client(osu_library, config.api_key)
 
@@ -120,13 +124,16 @@ class ProgramLogic:
 
 	# message sending ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 	def sendstore(self, message, name, file1):
-		temp = open(file1, "a")										# if file doesn't exist, make it
+		cur_path = os.path.dirname(__file__)
+		new_path = os.path.relpath('log\\', cur_path)
+		fin_path = os.path.join(new_path, file1)
+		temp = open(fin_path, "a")									# if file doesn't exist, make it
 		temp.close()												# close file
-		names_file = open(file1, "r")								# read file data
+		names_file = open(fin_path, "r")							# read file data
 		all_names = names_file.read().splitlines()					# split to lines
 		names_file.close()											# close reading, for writing
 		if name not in all_names:
-			names_file = open(file1, "a+")							# write file data
+			names_file = open(fin_path, "a+")						# write file data
 			names_file.write(name + "\n")							# write file data
 			names_file.close()										# close file for resources
 			return message
@@ -182,11 +189,15 @@ class ProgramLogic:
 					upcur.execute("SELECT * FROM userdb WHERE user=?", (name,))
 					modedb = upcur.fetchone()
 					if modedb is None:
-						return "Please set a mode with !set mode [catch|mania]"
+						return "Please set a mode with !set mode [catch|mania|taiko]"
 					else:
 						upcur.execute("SELECT mode FROM userdb WHERE user=?", (name,))
 						mode = modedb[1]
-					beatmap_data_api = self.osu_api_client.beatmap(beatmap_id=int(beatmap_id), include_converted_beatmaps=1, game_mode=slider.game_mode.GameMode(mode))
+
+				beatmap_data_api = self.osu_api_client.beatmap(beatmap_id=int(beatmap_id), include_converted_beatmaps=True, game_mode=slider.game_mode.GameMode(mode))
+				if beatmap_data_api.max_combo is None and mode is not 3:
+					beatmap_data_api = self.osu_api_client.beatmap(beatmap_id=int(beatmap_id), include_converted_beatmaps=True)
+
 				beatmap_data_s[name] = (beatmap_data, beatmap_data_api, mode, beatmap_id)
 				artist_name = beatmap_data.artist + " - " + beatmap_data.title + " [" + beatmap_data.version + "]"
 
@@ -264,13 +275,13 @@ class ProgramLogic:
 					upcur.execute("SELECT * FROM userdb WHERE user=?", (name,))
 					modedb = upcur.fetchone()
 					if modedb is None:
-						return "Please set a mode with !set mode [catch|mania]"
+						return "Please set a mode with !set mode [catch|mania|taiko]"
 					else:
 						upcur.execute("SELECT mode FROM userdb WHERE user=?", (name,))
 						mode = modedb[1]
 
 				if mode_api != mode:
-					beatmap_data_api = self.osu_api_client.beatmap(beatmap_id=beatmap_id, include_converted_beatmaps=1, game_mode=slider.game_mode.GameMode(mode))
+					beatmap_data_api = self.osu_api_client.beatmap(beatmap_id=beatmap_id, include_converted_beatmaps=True, game_mode=slider.game_mode.GameMode(mode))
 
 				max_combo = int(beatmap_data_api.max_combo) if beatmap_data_api.max_combo is not None else "err"
 				artist_name = beatmap_data.artist + " - " + beatmap_data.title + " [" + beatmap_data.version + "]"
@@ -304,7 +315,7 @@ class ProgramLogic:
 					acm_data_s[name] = [acc, combo, miss]
 					pp_vals = (str(self.calculatepp(beatmap_data, beatmap_data_api, mode, acc=acc, max_player_combo=combo, miss=miss, mods=mods)), )
 					acccombomiss = str(acc) + "% " + str(combo) + "x " + str(miss) + "miss " + mods_name
-					end_props = str(round(float(beatmap_data_api.star_rating), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data_api.total_length))) + " AR" + str(beatmap_data.approach_rate) + " MAX" + str(beatmap_data_api.max_combo)
+					end_props = str(round(float(beatmap_data_api.star_rating), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data_api.hit_length.seconds))) + " AR" + str(beatmap_data.approach_rate) + " MAX" + str(beatmap_data_api.max_combo)
 					sent = artist_name + " | osu!catch | " + acccombomiss + ": " + pp_vals[0] + "pp | " + end_props
 				elif mode == 3:
 					try:
@@ -327,7 +338,7 @@ class ProgramLogic:
 					acm_data_s[name] = [acc, score]
 					pp_vals = (str(self.calculatepp(beatmap_data, beatmap_data_api, mode=mode, acc=acc, score=score, mods=mods)), )
 					accscore = str(acc) + "% " + str(score) + " " + mods_name
-					end_props = str(round(float(beatmap_data_api.star_rating), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data_api.total_length))) + " OD" + str(beatmap_data.overall_difficulty) + " " + str(beatmap_data.circle_size) + "key OBJ" + str(len(beatmap_data.hit_objects))
+					end_props = str(round(float(beatmap_data_api.star_rating), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data_api.hit_length.seconds))) + " OD" + str(beatmap_data.overall_difficulty) + " " + str(beatmap_data.circle_size) + "key OBJ" + str(len(beatmap_data.hit_objects))
 					sent = artist_name + " | osu!mania | " + accscore + ": " + pp_vals[0] + "pp | " + end_props
 				elif mode == 1:
 					try:
@@ -404,13 +415,13 @@ class ProgramLogic:
 					upcur.execute("SELECT * FROM userdb WHERE user=?", (name,))
 					modedb = upcur.fetchone()
 					if modedb is None:
-						return "Please set a mode with !set mode [catch|mania]"
+						return "Please set a mode with !set mode [catch|mania|taiko]"
 					else:
 						upcur.execute("SELECT mode FROM userdb WHERE user=?", (name,))
 						mode = modedb[1]
 
 				if mode_api != mode:
-					beatmap_data_api = self.osu_api_client.beatmap(beatmap_id=beatmap_id, include_converted_beatmaps=1, game_mode=slider.game_mode.GameMode(mode))
+					beatmap_data_api = self.osu_api_client.beatmap(beatmap_id=beatmap_id, include_converted_beatmaps=True, game_mode=slider.game_mode.GameMode(mode))
 
 				max_combo = int(beatmap_data_api.max_combo) if beatmap_data_api.max_combo is not None else "err"
 				artist_name = beatmap_data.artist + " - " + beatmap_data.title + " [" + beatmap_data.version + "]"
@@ -430,7 +441,7 @@ class ProgramLogic:
 						acc, combo, miss = (100, beatmap_data_api.max_combo, 0)
 					pp_vals = (str(self.calculatepp(beatmap_data, beatmap_data_api, mode, acc=acc, combo=combo, miss=miss, mods=mods)), )
 					acccombomiss = str(acc) + "% " + str(combo) + "x " + str(miss) + "miss " + mods_name
-					end_props = str(round(float(beatmap_data_api.star_rating), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data_api.total_length))) + " AR" + str(beatmap_data.approach_rate) + " MAX" + str(beatmap_data_api.max_combo)
+					end_props = str(round(float(beatmap_data_api.star_rating), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data_api.hit_length.seconds))) + " AR" + str(beatmap_data.approach_rate) + " MAX" + str(beatmap_data_api.max_combo)
 					sent = artist_name + " | osu!catch | " + acccombomiss + ": " + pp_vals[0] + "pp | " + end_props
 				elif mode == 3:  # nf and ez only
 					if mods & 8 == 8:
@@ -446,9 +457,9 @@ class ProgramLogic:
 						acc, score = (100, 1000000)
 					pp_vals = (str(self.calculatepp(beatmap_data, beatmap_data_api, mode=mode, acc=acc, score=score, mods=mods)), )
 					accscore = str(acc) + "% " + str(score) + " " + mods_name
-					end_props = str(round(float(beatmap_data_api.star_rating), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data_api.total_length))) + " OD" + str(beatmap_data.overall_difficulty) + " " + str(beatmap_data.circle_size) + "key OBJ" + str(len(beatmap_data.hit_objects))
+					end_props = str(round(float(beatmap_data_api.star_rating), 2)) + "* " + time.strftime("%M:%S", time.gmtime(int(beatmap_data_api.hit_length.seconds))) + " OD" + str(beatmap_data.overall_difficulty) + " " + str(beatmap_data.circle_size) + "key OBJ" + str(len(beatmap_data.hit_objects))
 					sent = artist_name + " | osu!mania | " + accscore + ": " + pp_vals[0] + "pp | " + end_props
-				elif mode == 1:  # hd and fl only
+				elif mode == 1:  # all mods as of now
 					if acm_data in locals():
 						acc, miss = acm_data
 					else:
@@ -530,7 +541,10 @@ class Bot(irc.IRCClient):
 						sentmsg = self.logic.sendpp(msg, user, "acm")
 						if sentmsg:
 							self.msg(user, sentmsg)
-							self.logic.savetofile(sentmsg, open("sentcommands.txt", "a"))
+							cur_path = os.path.dirname(__file__)
+							new_path = os.path.relpath('log\\', cur_path)
+							fin_path = os.path.join(new_path, "sentcommands.txt")
+							self.logic.savetofile(sentmsg, open(fin_path, "a"))
 					except:
 						traceback.print_exc(file=open("err.log", "a"))
 						self.msg(user, "You didn't give me accuracy, combo, or misses?")
@@ -539,7 +553,10 @@ class Bot(irc.IRCClient):
 						sentmsg = self.logic.sendpp(msg, user, "mod")
 						if sentmsg:
 							self.msg(user, sentmsg)
-							self.logic.savetofile(sentmsg, open("sentcommands.txt", "a"))
+							cur_path = os.path.dirname(__file__)
+							new_path = os.path.relpath('log\\', cur_path)
+							fin_path = os.path.join(new_path, "sentcommands.txt")
+							self.logic.savetofile(sentmsg, open(fin_path, "a"))
 					except:
 						traceback.print_exc(file=open("err.log", "a"))
 						self.msg(user, "No mods?")
@@ -578,7 +595,10 @@ class Bot(irc.IRCClient):
 			sentmsg = self.logic.sendpp(msg, user, "np")
 			if sentmsg:
 				self.msg(user, sentmsg)
-				self.logic.savetofile(sentmsg, open("sentcommands.txt", "a"))
+				cur_path = os.path.dirname(__file__)
+				new_path = os.path.relpath('log\\', cur_path)
+				fin_path = os.path.join(new_path, "sentcommands.txt")
+				self.logic.savetofile(sentmsg, open(fin_path, "a"))
 			return
 
 
