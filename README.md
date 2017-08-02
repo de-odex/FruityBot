@@ -1,3 +1,10 @@
+```diff
+- Disclaimer: Making a bot account is disallowed unless you have permission from peppy. Please email him or support (pe@ppy.sh) before doing so.
+
++ Test by changing the config.py's "server" to "irc.freenode.net" and using a random name in "botnick"
+```
+
+
 # FruityBot
 Tillerino for osu!catch, osu!mania and osu!taiko
 
