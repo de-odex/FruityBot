@@ -12,8 +12,10 @@ Tillerino for osu!catch, osu!mania and osu!taiko
 I have no idea how to write a README.
 Thanks iRevi for the name.
 
+## How-to use
+1. Send "aEverr" an /np!
 
-## Set-up
+## How-to host
 1. Clone the repository
 2. Install the dependencies: 
    * [slider](https://github.com/llllllllll/slider)
