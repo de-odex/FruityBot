@@ -25,7 +25,7 @@ colorama.init()
 try:
     import config, calc
 except ImportError:
-    print("No modules. Please redownload and make a config.py.")
+    print("No modules. Please re-download and make a config.py.")
     input()
     sys.exit()
 
@@ -36,12 +36,13 @@ userdb.execute("CREATE TABLE IF NOT EXISTS userdb (user INT PRIMARY KEY, mode IN
 userdb.commit()
 
 # Library creation if does not exist
-libdir = pathlib.Path("/osulib")
+libdir = pathlib.Path("./osulib")
+libdir = libdir.absolute()
 
 if not libdir.exists():
     os.makedirs(libdir)
     print("Created osu! library")
-    osu_library = slider.Library.create_db(libdir)
+    osu_library = slider.library.Library.create_db(libdir)
 else:
     osu_library = slider.library.Library(libdir)
 
@@ -113,7 +114,8 @@ class ProgramLogic:
 
     # my commands now :3
 
-    def isfloat(self, value):
+    @staticmethod
+    def isfloat(value):
         try:
             float(value)
             return True
@@ -130,7 +132,7 @@ class ProgramLogic:
         self.savetofile(msg, self.repfile)
 
     # calc ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    def calculatepp(self, osubdata, osubdata_api, mode, beatmap=0, **kwargs):
+    def calculatepp(self, osubdata, osubdata_api, mode, **kwargs):
         # kwarg setting
 
         acc = kwargs.get('acc', 100)
@@ -367,7 +369,7 @@ class ProgramLogic:
                         return "You MISSed something there"
                     try:
                         combo = int(combo)
-                        if combo <= max_combo and combo >= 0:
+                        if 0 <= combo <= max_combo:
                             combo = combo
                         else:
                             raise SyntaxError
@@ -375,7 +377,7 @@ class ProgramLogic:
                         return "You made a mistake with your combo!"
                     try:
                         acc = float(acc)
-                        if acc >= 0 and acc <= 100:
+                        if 0.0 <= acc <= 100.0:
                             acc = acc
                         else:
                             raise SyntaxError
@@ -400,7 +402,7 @@ class ProgramLogic:
                 elif mode == 3:
                     try:
                         score = int(score)
-                        if score <= 1000000 and score >= 0:
+                        if 1000000 >= score >= 0:
                             score = score
                         else:
                             raise SyntaxError
@@ -408,7 +410,7 @@ class ProgramLogic:
                         return "You messed up your score there..."
                     try:
                         acc = float(acc)
-                        if acc >= 0 and acc <= 100:
+                        if 0 <= acc <= 100:
                             acc = acc
                         else:
                             raise SyntaxError
@@ -441,7 +443,7 @@ class ProgramLogic:
                         return "You MISSed something there"
                     try:
                         acc = float(acc)
-                        if acc >= 0 and acc <= 100:
+                        if 0 <= acc <= 100:
                             acc = acc
                         else:
                             raise SyntaxError
@@ -543,7 +545,8 @@ class ProgramLogic:
                         acc, combo, miss = acm_data
                     else:
                         acc, combo, miss = (100, beatmap_data_api.max_combo, 0)
-                    pp_vals = (str(self.calculatepp(beatmap_data, beatmap_data_api, mode, acc=acc, combo=combo, miss=miss, mods=mods)),)
+                    pp_vals = (str(self.calculatepp(beatmap_data, beatmap_data_api, mode, acc=acc, combo=combo,
+                                                    miss=miss, mods=mods)),)
                     acccombomiss = str(acc) + "% " + str(combo) + "x " + str(miss) + "miss " + mods_name
                     end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
                         + "* " + bm_time \
@@ -566,7 +569,8 @@ class ProgramLogic:
                         acc, score = acm_data
                     else:
                         acc, score = (100, 1000000)
-                    pp_vals = (str(self.calculatepp(beatmap_data, beatmap_data_api, mode=mode, acc=acc, score=score, mods=mods)),)
+                    pp_vals = (str(self.calculatepp(beatmap_data, beatmap_data_api, mode=mode, acc=acc, score=score,
+                                                    mods=mods)),)
                     accscore = str(acc) + "% " + str(score) + " " + mods_name
                     end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
                         + "* " + bm_time \
@@ -583,7 +587,8 @@ class ProgramLogic:
                         acc, miss = acm_data
                     else:
                         acc, miss = (100, 0)
-                    pp_vals = (str(self.calculatepp(beatmap_data, beatmap_data_api, mode, acc=acc, miss=miss, mods=mods)),)
+                    pp_vals = (str(self.calculatepp(beatmap_data, beatmap_data_api, mode, acc=acc, miss=miss,
+                                                    mods=mods)),)
                     accmiss = str(acc) + "% " + str(miss) + "miss " + mods_name
                     end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
                         + "* " + bm_time \
@@ -600,13 +605,15 @@ class ProgramLogic:
         except IndexError:
             return "There seems to be no link in your /np... Is this a beatmap you made?"
         except ModeError:
-            return "Something really bad went wrong, and I don't know what it is yet. Wait for my creator ^-^. Ident:ModeError"
+            return "Something really bad went wrong, and I don't know what it is yet. Wait for my creator ^-^. " \
+                   "Ident:ModeError"
         except MsgError:
             return "Somehow your message got lost in my head... Send it again?"
         except NpError:
             return "You haven't /np'd me anything yet!"
         except AttrError:
-            return "Do it like me, \"!acc 95 200x 1m\". Or something, I dunno. Recheck https://github.com/de-odex/aEverrBot/wiki"
+            return "Do it like me, \"!acc 95 200x 1m\". Or something, I dunno. " \
+                   "Recheck https://github.com/de-odex/aEverrBot/wiki"
         except ComboError:
             return "Something's up, or I guess in this case, down, with your combo."
         except requests.exceptions.HTTPError as e:
@@ -628,7 +635,8 @@ class ProgramLogic:
         except:
             traceback.print_exc(file=open("err.log", "a"))
             print(ConsoleColors.FAIL + "ERR: UNK" + ConsoleColors.ENDC)
-            return "Something really bad went wrong, and I don't know what it is yet. Wait for my creator ^-^. Ident:" + ident
+            return "Something really bad went wrong, and I don't know what it is yet. Wait for my creator ^-^." \
+                   " Ident:" + ident
 
 
 class Bot(irc.IRCClient):
