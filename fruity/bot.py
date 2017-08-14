@@ -95,7 +95,7 @@ class ProgramLogic:
         self.repfile = open("reports.log", "a")
         self.UPDATE_MSG = \
             "eyo, its boterino here with an update ([https://aeverr.s-ul.eu/CpdBefOU sic]). " \
-            "Bugcheck #1: maps with asterisks may not work"
+            "Bugfix #1: maps with asterisks work now"
         self.FIRST_TIME_MSG = \
             "Welcome, and thanks for using my bot! Check out https://github.com/de-odex/aEverrBot/wiki for commands. " \
             "!botreport to report a bug."
@@ -114,7 +114,6 @@ class ProgramLogic:
 
     # my commands now :3
 
-    @staticmethod
     def isfloat(value):
         try:
             float(value)
@@ -130,27 +129,6 @@ class ProgramLogic:
 
     def report(self, msg):
         self.savetofile(msg, self.repfile)
-
-    # calc ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    def calculatepp(self, osubdata, osubdata_api, mode, **kwargs):
-        # kwarg setting
-
-        acc = kwargs.get('acc', 100)
-        max_player_combo = kwargs.get('max_player_combo', 0)
-        miss = kwargs.get('miss', 0)
-        score = kwargs.get('score', 1000000)
-        mods = kwargs.get('mods', 0)
-        # pp returning
-        if mode == 2:
-            r = calc.CatchTheBeat()
-            return r.calculatepp(acc=acc, max_player_combo=max_player_combo, miss=miss, mods=mods, osubdata=osubdata,
-                                 osubdata_api=osubdata_api)
-        elif mode == 3:
-            r = calc.Mania()
-            return r.calculatepp(acc=acc, score=score, mods=mods, osubdata=osubdata, osubdata_api=osubdata_api)
-        elif mode == 1:
-            r = calc.Taiko()
-            return r.calculatepp(acc=acc, miss=miss, mods=mods, osubdata=osubdata, osubdata_api=osubdata_api)
 
     # message sending ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     def sendstore(self, message, name, file1):
@@ -238,10 +216,10 @@ class ProgramLogic:
                 bm_time = time.strftime("%M:%S", time.gmtime(int(beatmap_data_api.hit_length.seconds)))
 
                 if mode == 2:
-                    pp_vals = (str(self.calculatepp(beatmap_data, beatmap_data_api, mode)),
-                               str(self.calculatepp(beatmap_data, beatmap_data_api, mode, acc=99.5)),
-                               str(self.calculatepp(beatmap_data, beatmap_data_api, mode, acc=99)),
-                               str(self.calculatepp(beatmap_data, beatmap_data_api, mode, acc=98.5)))
+                    pp_vals = (str(calc.calculatepp(beatmap_data, beatmap_data_api, mode)),
+                               str(calc.calculatepp(beatmap_data, beatmap_data_api, mode, acc=99.5)),
+                               str(calc.calculatepp(beatmap_data, beatmap_data_api, mode, acc=99)),
+                               str(calc.calculatepp(beatmap_data, beatmap_data_api, mode, acc=98.5)))
                     end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
                         + "* " + bm_time \
                         + " AR" + str(beatmap_data.approach_rate) \
@@ -254,9 +232,9 @@ class ProgramLogic:
                         + " | 98.5% FC: " + pp_vals[3] + "pp" \
                         + " | " + end_props
                 elif mode == 3:
-                    pp_vals = (str(self.calculatepp(beatmap_data, beatmap_data_api, mode=mode)),
-                               str(self.calculatepp(beatmap_data, beatmap_data_api, mode=mode, acc=99, score=970000)),
-                               str(self.calculatepp(beatmap_data, beatmap_data_api, mode=mode, acc=97, score=900000)))
+                    pp_vals = (str(calc.calculatepp(beatmap_data, beatmap_data_api, mode=mode)),
+                               str(calc.calculatepp(beatmap_data, beatmap_data_api, mode=mode, acc=99, score=970000)),
+                               str(calc.calculatepp(beatmap_data, beatmap_data_api, mode=mode, acc=97, score=900000)))
                     end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
                         + "* " + bm_time \
                         + " OD" + str(beatmap_data.overall_difficulty) \
@@ -269,9 +247,9 @@ class ProgramLogic:
                         + " | 97% 900k: " + pp_vals[2] + "pp" \
                         + " | " + end_props
                 elif mode == 1:
-                    pp_vals = (str(self.calculatepp(beatmap_data, beatmap_data_api, mode=mode)),
-                               str(self.calculatepp(beatmap_data, beatmap_data_api, mode=mode, acc=99)),
-                               str(self.calculatepp(beatmap_data, beatmap_data_api, mode=mode, acc=98)))
+                    pp_vals = (str(calc.calculatepp(beatmap_data, beatmap_data_api, mode=mode)),
+                               str(calc.calculatepp(beatmap_data, beatmap_data_api, mode=mode, acc=99)),
+                               str(calc.calculatepp(beatmap_data, beatmap_data_api, mode=mode, acc=98)))
                     end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
                         + "* " + bm_time \
                         + " OD" + str(beatmap_data.overall_difficulty) \
@@ -385,7 +363,7 @@ class ProgramLogic:
                         return "Check your accuracy again, please"
 
                     acm_data_s[name] = [acc, combo, miss]
-                    pp_vals = (str(self.calculatepp(beatmap_data,
+                    pp_vals = (str(calc.calculatepp(beatmap_data,
                                    beatmap_data_api, mode, acc=acc,
                                    max_player_combo=combo, miss=miss,
                                    mods=mods)),)
@@ -418,7 +396,7 @@ class ProgramLogic:
                         return "Check your accuracy again, please"
 
                     acm_data_s[name] = [acc, score]
-                    pp_vals = (str(self.calculatepp(beatmap_data,
+                    pp_vals = (str(calc.calculatepp(beatmap_data,
                                    beatmap_data_api, mode=mode, acc=acc,
                                    score=score, mods=mods)),)
                     accscore = str(acc) + "% " + str(score) + " " + mods_name
@@ -451,7 +429,7 @@ class ProgramLogic:
                         return "Check your accuracy again, please"
 
                     acm_data_s[name] = [acc, miss]
-                    pp_vals = (str(self.calculatepp(beatmap_data,
+                    pp_vals = (str(calc.calculatepp(beatmap_data,
                                    beatmap_data_api, mode=mode, acc=acc,
                                    miss=miss, mods=mods)),)
                     accmiss = str(acc) + "% " + str(miss) + "miss " + mods_name
@@ -545,7 +523,7 @@ class ProgramLogic:
                         acc, combo, miss = acm_data
                     else:
                         acc, combo, miss = (100, beatmap_data_api.max_combo, 0)
-                    pp_vals = (str(self.calculatepp(beatmap_data, beatmap_data_api, mode, acc=acc, combo=combo,
+                    pp_vals = (str(calc.calculatepp(beatmap_data, beatmap_data_api, mode, acc=acc, combo=combo,
                                                     miss=miss, mods=mods)),)
                     acccombomiss = str(acc) + "% " + str(combo) + "x " + str(miss) + "miss " + mods_name
                     end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
@@ -569,7 +547,7 @@ class ProgramLogic:
                         acc, score = acm_data
                     else:
                         acc, score = (100, 1000000)
-                    pp_vals = (str(self.calculatepp(beatmap_data, beatmap_data_api, mode=mode, acc=acc, score=score,
+                    pp_vals = (str(calc.calculatepp(beatmap_data, beatmap_data_api, mode=mode, acc=acc, score=score,
                                                     mods=mods)),)
                     accscore = str(acc) + "% " + str(score) + " " + mods_name
                     end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
@@ -587,7 +565,7 @@ class ProgramLogic:
                         acc, miss = acm_data
                     else:
                         acc, miss = (100, 0)
-                    pp_vals = (str(self.calculatepp(beatmap_data, beatmap_data_api, mode, acc=acc, miss=miss,
+                    pp_vals = (str(calc.calculatepp(beatmap_data, beatmap_data_api, mode, acc=acc, miss=miss,
                                                     mods=mods)),)
                     accmiss = str(acc) + "% " + str(miss) + "miss " + mods_name
                     end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
@@ -617,21 +595,11 @@ class ProgramLogic:
         except ComboError:
             return "Something's up, or I guess in this case, down, with your combo."
         except requests.exceptions.HTTPError as e:
-            if e.response.status_code == requests.codes['/o\\',
-                                                        'not_implemented',
-                                                        'bad_gateway',
-                                                        'service_unavailable',
-                                                        'gateway_timeout',
-                                                        'http_version_not_supported',
-                                                        'variant_also_negotiates',
-                                                        'insufficient_storage',
-                                                        'bandwidth_limit_exceeded',
-                                                        'not_extended',
-                                                        'network_authentication_required']:
+            if 500 <= e.response.status_code <= 599:
                 return "The osu!api is down."
             else:
                 print(ConsoleColors.FAIL + "ERR: internet, " + str(e.response.status_code) + ConsoleColors.ENDC)
-                return "Sonmething on my side malfunctioned, please retry."
+                return "Something on my side malfunctioned, please retry."
         except:
             traceback.print_exc(file=open("err.log", "a"))
             print(ConsoleColors.FAIL + "ERR: UNK" + ConsoleColors.ENDC)
@@ -661,7 +629,6 @@ class Bot(irc.IRCClient):
 
     def signedOn(self):
         """Called when bot has successfully signed on to server."""
-
     # self.join(self.factory.channel)  # DO NOT JOIN ANY CHANNEL
 
     def joined(self, channel):
@@ -670,19 +637,20 @@ class Bot(irc.IRCClient):
 
     def privmsg(self, user, channel, msg):
         """Called when the bot receives a message."""
+        global osu_library
         user = user.split('!', 1)[0]
         self.logic.log("<%s> %s" % (user, msg))
 
         # Check to see if they're sending me a private message
         if channel == self.nickname:
-            if msg.startswith("!"):
+            if msg.startswith(config.prefix):
                 ftm = self.logic.sendstore(self.logic.FIRST_TIME_MSG, user, "firsttime.txt")
                 um = self.logic.sendstore(self.logic.UPDATE_MSG, user, "updates.txt")
                 if ftm:
                     self.msg(user, ftm)
                 if um:
                     self.msg(user, um)
-                command = msg.split('!', 1)[1].split()[0]
+                command = msg.split(config.prefix, 1)[1].split()[0]
 
                 # ~~~~~~~~~~~~~~~~~~~~~~~~ THE COMMANDS ~~~~~~~~~~~~~~~~~~~~~~~~
                 if command == "set":
@@ -728,9 +696,16 @@ class Bot(irc.IRCClient):
                     except:
                         self.msg(user, "What are you reporting?")
                 else:
-                    self.msg(user, "Invalid command. !h for help.")
-
-            return
+                    self.msg(user, "Invalid command. " + config.prefix + "h for help.")
+            elif (user == self.nickname or user == config.adminname) and msg.startswith(config.adminprefix):
+                command = msg.split(config.adminprefix, 1)[1].split()[0]
+                if command == "exit":
+                    self.msg(user, "Exiting...")
+                    reactor.stop()
+                if command == "regenerate":
+                    osu_library = slider.library.Library.create_db(libdir)
+                    self.msg(user, "Regenerated osu! library.")
+        return
 
     def action(self, user, channel, msg):
         """Called when the bot sees someone do an action."""
@@ -745,6 +720,7 @@ class Bot(irc.IRCClient):
                 self.msg(user, um)
 
             sentmsg = self.logic.sendpp(msg, user, "np")
+
             if sentmsg:
                 self.msg(user, sentmsg)
                 cur_path = os.path.dirname(__file__)
@@ -781,7 +757,7 @@ class BotFactory(protocol.ReconnectingClientFactory):
         protocol.ReconnectingClientFactory.clientConnectionFailed(self, connector, reason)
 
 
-if __name__ == '__main__':
+def main():
     # initialize logging
     log.startLogging(sys.stdout)
 
@@ -793,3 +769,6 @@ if __name__ == '__main__':
 
     # run bot
     reactor.run()
+
+if __name__ == '__main__':
+    main()

@@ -3,3 +3,5 @@ password = ""  # Your permanent IRC password
 server = "cho.ppy.sh"  # Server
 botnick = ""  # Your Username
 adminname = ""  # Your Username (same as above)
+prefix = ""  # Command prefix
+adminprefix = ""  # Admin command prefix
