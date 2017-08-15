@@ -19,6 +19,7 @@ import os
 import requests
 import pathlib
 import colorama
+import random
 
 colorama.init()
 
@@ -114,7 +115,7 @@ class ProgramLogic:
 
     # my commands now :3
 
-    def isfloat(value):
+    def isfloat(self, value):
         try:
             float(value)
             return True
@@ -601,10 +602,14 @@ class ProgramLogic:
                 print(ConsoleColors.FAIL + "ERR: internet, " + str(e.response.status_code) + ConsoleColors.ENDC)
                 return "Something on my side malfunctioned, please retry."
         except:
-            traceback.print_exc(file=open("err.log", "a"))
-            print(ConsoleColors.FAIL + "ERR: UNK" + ConsoleColors.ENDC)
+            rdm = random.randint(0,100000)
+            e = traceback.format_exc()
+            e = "\n\nid:" + str(rdm) + "\n" + e
+            with open('err.log', 'a') as f:
+                f.write(e)
+            print(ConsoleColors.FAIL + "ERR: UNK, id:" + str(rdm) + ConsoleColors.ENDC)
             return "Something really bad went wrong, and I don't know what it is yet. Wait for my creator ^-^." \
-                   " Ident:" + ident
+                   " Ident:" + ident + " id:" + str(rdm)
 
 
 class Bot(irc.IRCClient):
@@ -629,7 +634,7 @@ class Bot(irc.IRCClient):
 
     def signedOn(self):
         """Called when bot has successfully signed on to server."""
-    # self.join(self.factory.channel)  # DO NOT JOIN ANY CHANNEL
+        print("Signed in!")  # don't log
 
     def joined(self, channel):
         """Called when the bot joins the channel."""

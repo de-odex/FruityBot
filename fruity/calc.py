@@ -1,27 +1,21 @@
+
 import math
 
-
-def calculatepp(osubdata, osubdata_api, mode, **kwargs):
-    # kwarg setting
-    acc = kwargs.get('acc', 100)
-    max_player_combo = kwargs.get('max_player_combo', 0)
-    miss = kwargs.get('miss', 0)
-    score = kwargs.get('score', 1000000)
-    mods = kwargs.get('mods', 0)
+def calculatepp(osubdata, osubdata_api, mode, acc=100, max_player_combo=0, miss=0, score=1000000, mods=0):
     # pp returning
     if mode == 2:
-        r = CatchTheBeat()
+        r = __CatchTheBeat()
         return r.calculatepp(acc=acc, max_player_combo=max_player_combo, miss=miss, mods=mods, osubdata=osubdata,
                              osubdata_api=osubdata_api)
     elif mode == 3:
-        r = Mania()
+        r = __Mania()
         return r.calculatepp(acc=acc, score=score, mods=mods, osubdata=osubdata, osubdata_api=osubdata_api)
     elif mode == 1:
-        r = Taiko()
+        r = __Taiko()
         return r.calculatepp(acc=acc, miss=miss, mods=mods, osubdata=osubdata, osubdata_api=osubdata_api)
 
 
-class CatchTheBeat:
+class __CatchTheBeat:
     def __init__(self):
         pass
 
@@ -56,7 +50,7 @@ class CatchTheBeat:
         return float(round(finalpp, 3))
 
 
-class Mania:
+class __Mania:
     def __init__(self):
         pass
 
@@ -94,7 +88,7 @@ class Mania:
         return float(round(finalpp, 3))
 
 
-class Taiko:
+class __Taiko:
     def __init__(self):
         pass
 
