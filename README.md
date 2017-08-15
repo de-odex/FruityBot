@@ -16,8 +16,7 @@ Thanks iRevi for the name.
 1. Send "aEverr" an /np!
 
 ## How-to host
-1. Clone the repository
-2. Install the dependencies: 
-   * [slider](https://github.com/llllllllll/slider)
+1. Download the repository as zip
+2. Run `pip install (zipname)`
 3. Create a file named "config.py" in the same directory (see config.py.template)
 4. Run "bot.py"
