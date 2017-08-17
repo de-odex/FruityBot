@@ -21,12 +21,13 @@ import pathlib
 import colorama
 import random
 
-colorama.init()
+colorama.init(autoreset=True)
 
 try:
     import config, calc
 except ImportError:
-    print("No modules. Please re-download and make a config.py.")
+    print(colorama.Back.RED + colorama.Style.BRIGHT + " ERROR " + colorama.Back.RESET +
+          "No modules. Please re-download and make a config.py.")
     input()
     sys.exit()
 
@@ -42,7 +43,7 @@ libdir = libdir.absolute()
 
 if not libdir.exists():
     os.makedirs(libdir)
-    print("Created osu! library")
+    print(colorama.Style.BRIGHT + "Created osu! library")
     osu_library = slider.library.Library.create_db(libdir)
 else:
     osu_library = slider.library.Library(libdir)
@@ -77,17 +78,6 @@ class ComboError(Exception):
     pass
 
 
-class ConsoleColors:
-    HEADER = '\033[95m'
-    OKBLUE = '\033[94m'
-    OKGREEN = '\033[92m'
-    WARNING = '\033[93m'
-    FAIL = '\033[91m'
-    ENDC = '\033[0m'
-    BOLD = '\033[1m'
-    UNDERLINE = '\033[4m'
-
-
 class ProgramLogic:
     """An independent logic class (because separation of application and protocol logic is a good thing)."""
 
@@ -104,7 +94,8 @@ class ProgramLogic:
 
     def log(self, message):
         """Write a message to the file."""
-        print(message)
+        print(colorama.Style.BRIGHT + message)
+        message = re.sub('\033\[\d+m', '', message)
         timestamp = time.strftime("[%H:%M:%S]", time.localtime(time.time()))
         self.file.write('%s %s\n' % (timestamp, message))
         self.file.flush()
@@ -183,16 +174,16 @@ class ProgramLogic:
                                   message)
                 mod_data_s[name] = 0
                 acm_data_s[name] = 0
-                beatmap_id = urllib.parse.urlparse(link[0]).path.split("/")[2]
-                if urllib.parse.urlparse(link[0]).path.split("/")[1] != "b":
+                beatmap_id = urllib.parse.urlparse(link[0]).path.split("/")
+                if beatmap_id[1] != "b":
                     return "This is a beatmapset, not a beatmap"
-                beatmap_id = beatmap_id.split("&")[0]
+                beatmap_id = beatmap_id[2].split("&")[0]
                 beatmap_data = osu_library.lookup_by_id(beatmap_id, download=True, save=True)
                 beatmap_data_api = self.osu_api_client.beatmap(beatmap_id=beatmap_id, include_converted_beatmaps=True)
                 if not beatmap_data_api:
                     raise ModeError
 
-                # mode checking
+                # checks mode
                 if int(beatmap_data.mode) != 0:
                     mode = int(beatmap_data.mode)
                 else:
@@ -262,57 +253,19 @@ class ProgramLogic:
                         + " | 98% FC: " + pp_vals[2] + "pp" \
                         + " | " + end_props
             # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-            elif ident == "acm":
+            elif ident == "acm" or ident == "mod":
                 mods_name = ""
                 if name not in beatmap_data_s:
                     raise NpError
-                if name not in mod_data_s:
-                    mods = 0
-                else:
-                    mods = mod_data_s[name]
 
-                beatmap_data = beatmap_data_s[name][0]
-                beatmap_data_api = beatmap_data_s[name][1]
-                mode_api = beatmap_data_s[name][2]
-                beatmap_id = beatmap_data_s[name][3]
+                beatmap_data, beatmap_data_api, mode_api, beatmap_id = beatmap_data_s[name]
 
                 split_msg = message.split()
                 del split_msg[0]
                 if not split_msg:
                     raise MsgError
-                acc = 'hi'
-                combo = 'hi'
-                miss = 'hi'
-                score = 'hi'
-                for i in split_msg:
-                    if self.isfloat(i):
-                        acc = i
-                    elif i.endswith(("x",)):
-                        combo = i.rstrip("x")
-                    elif i.endswith(("m",)):
-                        miss = i.rstrip("m")
-                    elif i.endswith(("s",)):
-                        score = i.rstrip("s")
-                    else:
-                        pass
 
-                if acc == 'hi' and combo == 'hi' and miss == 'hi' and score == 'hi':
-                    raise AttrError
-
-                if mods & 1 == 1:
-                    mods_name += "NF"
-                if mods & 2 == 2:
-                    mods_name += "EZ"
-                if mods & 8 == 8:
-                    mods_name += "HD"
-                if mods & 1024 == 1024:
-                    mods_name += "FL"
-                if mods == 0:
-                    mods_name = "NoMod"
-
-                # Attribute testing
-
-                # mode checking
+                # checks mode
                 if int(beatmap_data.mode) != 0:
                     mode = int(beatmap_data.mode)
                 else:
@@ -332,260 +285,267 @@ class ProgramLogic:
                 max_combo = int(beatmap_data_api.max_combo) if beatmap_data_api.max_combo is not None else "err"
                 artist_name = beatmap_data.artist + " - " + beatmap_data.title + " [" + beatmap_data.version + "]"
                 bm_time = time.strftime("%M:%S", time.gmtime(int(beatmap_data_api.hit_length.seconds)))
+                # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                if ident == "acm":
 
-                if mode == 2:
-                    if combo == 'hi':
-                        combo = int(beatmap_data_api.max_combo)
-                    if miss == 'hi':
-                        miss = 0
-                    try:
-                        miss = int(miss)
-                        if miss < max_combo or miss >= 0:
-                            miss = miss
-                        else:
-                            raise SyntaxError
-                    except:
-                        return "You MISSed something there"
-                    try:
-                        combo = int(combo)
-                        if 0 <= combo <= max_combo:
-                            combo = combo
-                        else:
-                            raise SyntaxError
-                    except:
-                        return "You made a mistake with your combo!"
-                    try:
-                        acc = float(acc)
-                        if 0.0 <= acc <= 100.0:
-                            acc = acc
-                        else:
-                            raise SyntaxError
-                    except:
-                        return "Check your accuracy again, please"
-
-                    acm_data_s[name] = [acc, combo, miss]
-                    pp_vals = (str(calc.calculatepp(beatmap_data,
-                                   beatmap_data_api, mode, acc=acc,
-                                   max_player_combo=combo, miss=miss,
-                                   mods=mods)),)
-                    acccombomiss = str(acc) + "% " + str(combo) + "x " + str(miss) + "miss " + mods_name
-                    end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
-                        + "* " + bm_time \
-                        + " AR" + str(beatmap_data.approach_rate) \
-                        + " MAX" + str(beatmap_data_api.max_combo)
-                    sent = artist_name\
-                        + " | osu!catch" \
-                        + " | " + acccombomiss + ": " \
-                        + pp_vals[0] + "pp" \
-                        + " | " + end_props
-                elif mode == 3:
-                    try:
-                        score = int(score)
-                        if 1000000 >= score >= 0:
-                            score = score
-                        else:
-                            raise SyntaxError
-                    except:
-                        return "You messed up your score there..."
-                    try:
-                        acc = float(acc)
-                        if 0 <= acc <= 100:
-                            acc = acc
-                        else:
-                            raise SyntaxError
-                    except:
-                        return "Check your accuracy again, please"
-
-                    acm_data_s[name] = [acc, score]
-                    pp_vals = (str(calc.calculatepp(beatmap_data,
-                                   beatmap_data_api, mode=mode, acc=acc,
-                                   score=score, mods=mods)),)
-                    accscore = str(acc) + "% " + str(score) + " " + mods_name
-                    end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
-                        + "* " + bm_time \
-                        + " OD" + str(beatmap_data.overall_difficulty) \
-                        + " " + str(beatmap_data.circle_size) + "key" \
-                        + " OBJ" + str(len(beatmap_data.hit_objects))
-                    sent = artist_name\
-                        + " | osu!mania" \
-                        + " | " + accscore + ": " \
-                        + pp_vals[0] + "pp" \
-                        + " | " + end_props
-                elif mode == 1:
-                    try:
-                        miss = int(miss)
-                        if miss < max_combo or miss >= 0:
-                            miss = miss
-                        else:
-                            raise SyntaxError
-                    except:
-                        return "You MISSed something there"
-                    try:
-                        acc = float(acc)
-                        if 0 <= acc <= 100:
-                            acc = acc
-                        else:
-                            raise SyntaxError
-                    except:
-                        return "Check your accuracy again, please"
-
-                    acm_data_s[name] = [acc, miss]
-                    pp_vals = (str(calc.calculatepp(beatmap_data,
-                                   beatmap_data_api, mode=mode, acc=acc,
-                                   miss=miss, mods=mods)),)
-                    accmiss = str(acc) + "% " + str(miss) + "miss " + mods_name
-                    end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
-                        + "* " + bm_time \
-                        + " OD" + str(beatmap_data.overall_difficulty) \
-                        + " MAX" + str(beatmap_data_api.max_combo)
-                    sent = artist_name\
-                        + " | osu!taiko" \
-                        + " | " + accmiss + ": " \
-                        + pp_vals[0] + "pp" \
-                        + " | " + end_props
-            # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-            elif ident == "mod":
-                mods_name = ""
-                if name not in beatmap_data_s:
-                    raise NpError
-
-                beatmap_data = beatmap_data_s[name][0]
-                beatmap_data_api = beatmap_data_s[name][1]
-                mode_api = beatmap_data_s[name][2]
-                beatmap_id = beatmap_data_s[name][3]
-
-                if name not in acm_data_s:
-                    pass
-                else:
-                    acm_data = acm_data_s[name]
-                mods = 0
-
-                split_msg = message.split()
-                del split_msg[0]
-                if not split_msg:
-                    raise MsgError
-                if split_msg[0].lower().find("hd") != -1:
-                    mods += 8
-                if split_msg[0].lower().find("fl") != -1:
-                    mods += 1024
-                if split_msg[0].lower().find("ez") != -1:
-                    mods += 2
-                if split_msg[0].lower().find("nf") != -1:
-                    mods += 1
-                if split_msg[0].lower().find("hr") != -1:
-                    mods += 16
-
-                if mods & 1 == 1:
-                    mods_name += "NF"
-                if mods & 2 == 2:
-                    mods_name += "EZ"
-                if mods & 8 == 8:
-                    mods_name += "HD"
-                if mods & 16 == 16:
-                    mods_name += "HR"
-                if mods & 1024 == 1024:
-                    mods_name += "FL"
-                if mods == 0:
-                    return "These mods are not supported yet!"
-
-                # Attribute testing
-
-                # mode checking
-                if int(beatmap_data.mode) != 0:
-                    mode = int(beatmap_data.mode)
-                else:
-                    upcur.execute("SELECT * FROM userdb WHERE user=?", (name,))
-                    modedb = upcur.fetchone()
-                    if modedb is None:
-                        return "Please set a mode with !set mode [catch|mania|taiko]"
+                    # checks for former mod data if any
+                    if name not in mod_data_s:
+                        mods = 0
                     else:
-                        upcur.execute("SELECT mode FROM userdb WHERE user=?", (name,))
-                        mode = modedb[1]
+                        mods = mod_data_s[name]
 
-                if mode_api != mode:
-                    beatmap_data_api = self.osu_api_client.beatmap(beatmap_id=beatmap_id,
-                                                                   include_converted_beatmaps=True,
-                                                                   game_mode=slider.game_mode.GameMode(mode))
+                    # reads args of message
+                    acc = combo = miss = score = 'hi'
+                    for i in split_msg:
+                        if self.isfloat(i):
+                            acc = i
+                        elif i.endswith(("x",)):
+                            combo = i.rstrip("x")
+                        elif i.endswith(("m",)):
+                            miss = i.rstrip("m")
+                        elif i.endswith(("s",)):
+                            score = i.rstrip("s")
+                        else:
+                            pass
 
-                max_combo = int(beatmap_data_api.max_combo) if beatmap_data_api.max_combo is not None else "err"
-                artist_name = beatmap_data.artist + " - " + beatmap_data.title + " [" + beatmap_data.version + "]"
-                bm_time = time.strftime("%M:%S", time.gmtime(int(beatmap_data_api.hit_length.seconds)))
+                    # checks if no args were passed
+                    if acc == 'hi' and combo == 'hi' and miss == 'hi' and score == 'hi':
+                        raise AttrError
 
-                mod_data_s[name] = mods
-                if mode == 2:  # hd and fl only
                     if mods & 1 == 1:
-                        return "These mods are not supported yet!"
+                        mods_name += "NF"
                     if mods & 2 == 2:
-                        return "These mods are not supported yet!"
-                    if mods & 16 == 16:
-                        return "These mods are not supported yet!"
-
-                    if acm_data in locals():
-                        acc, combo, miss = acm_data
-                    else:
-                        acc, combo, miss = (100, beatmap_data_api.max_combo, 0)
-                    pp_vals = (str(calc.calculatepp(beatmap_data, beatmap_data_api, mode, acc=acc, combo=combo,
-                                                    miss=miss, mods=mods)),)
-                    acccombomiss = str(acc) + "% " + str(combo) + "x " + str(miss) + "miss " + mods_name
-                    end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
-                        + "* " + bm_time \
-                        + " AR" + str(beatmap_data.approach_rate) \
-                        + " MAX" + str(beatmap_data_api.max_combo)
-                    sent = artist_name\
-                        + " | osu!catch" \
-                        + " | " + acccombomiss + ": " \
-                        + pp_vals[0] + "pp" \
-                        + " | " + end_props
-                elif mode == 3:  # nf and ez only
+                        mods_name += "EZ"
                     if mods & 8 == 8:
-                        return "These mods are not supported yet!"
+                        mods_name += "HD"
                     if mods & 1024 == 1024:
-                        return "These mods are not supported yet!"
+                        mods_name += "FL"
+                    if mods == 0:
+                        mods_name = "NoMod"
+
+                    if mode == 2:
+                        if combo == 'hi':
+                            combo = int(beatmap_data_api.max_combo)
+                        if miss == 'hi':
+                            miss = 0
+                        try:
+                            miss = int(miss)
+                            if miss < max_combo or miss >= 0:
+                                miss = miss
+                            else:
+                                raise SyntaxError
+                        except:
+                            return "You MISSed something there"
+                        try:
+                            combo = int(combo)
+                            if 0 <= combo <= max_combo:
+                                combo = combo
+                            else:
+                                raise SyntaxError
+                        except:
+                            return "You made a mistake with your combo!"
+                        try:
+                            acc = float(acc)
+                            if 0.0 <= acc <= 100.0:
+                                acc = acc
+                            else:
+                                raise SyntaxError
+                        except:
+                            return "Check your accuracy again, please"
+
+                        acm_data_s[name] = [acc, combo, miss]
+                        pp_vals = (str(calc.calculatepp(beatmap_data,
+                                       beatmap_data_api, mode, acc=acc,
+                                       max_player_combo=combo, miss=miss,
+                                       mods=mods)),)
+                        acccombomiss = str(acc) + "% " + str(combo) + "x " + str(miss) + "miss " + mods_name
+                        end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
+                            + "* " + bm_time \
+                            + " AR" + str(beatmap_data.approach_rate) \
+                            + " MAX" + str(beatmap_data_api.max_combo)
+                        sent = artist_name\
+                            + " | osu!catch" \
+                            + " | " + acccombomiss + ": " \
+                            + pp_vals[0] + "pp" \
+                            + " | " + end_props
+                    elif mode == 3:
+                        try:
+                            score = int(score)
+                            if 1000000 >= score >= 0:
+                                score = score
+                            else:
+                                raise SyntaxError
+                        except:
+                            return "You messed up your score there..."
+                        try:
+                            acc = float(acc)
+                            if 0 <= acc <= 100:
+                                acc = acc
+                            else:
+                                raise SyntaxError
+                        except:
+                            return "Check your accuracy again, please"
+
+                        acm_data_s[name] = [acc, score]
+                        pp_vals = (str(calc.calculatepp(beatmap_data,
+                                       beatmap_data_api, mode=mode, acc=acc,
+                                       score=score, mods=mods)),)
+                        accscore = str(acc) + "% " + str(score) + " " + mods_name
+                        end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
+                            + "* " + bm_time \
+                            + " OD" + str(beatmap_data.overall_difficulty) \
+                            + " " + str(beatmap_data.circle_size) + "key" \
+                            + " OBJ" + str(len(beatmap_data.hit_objects))
+                        sent = artist_name\
+                            + " | osu!mania" \
+                            + " | " + accscore + ": " \
+                            + pp_vals[0] + "pp" \
+                            + " | " + end_props
+                    elif mode == 1:
+                        try:
+                            miss = int(miss)
+                            if miss < max_combo or miss >= 0:
+                                miss = miss
+                            else:
+                                raise SyntaxError
+                        except:
+                            return "You MISSed something there"
+                        try:
+                            acc = float(acc)
+                            if 0 <= acc <= 100:
+                                acc = acc
+                            else:
+                                raise SyntaxError
+                        except:
+                            return "Check your accuracy again, please"
+
+                        acm_data_s[name] = [acc, miss]
+                        pp_vals = (str(calc.calculatepp(beatmap_data,
+                                       beatmap_data_api, mode=mode, acc=acc,
+                                       miss=miss, mods=mods)),)
+                        accmiss = str(acc) + "% " + str(miss) + "miss " + mods_name
+                        end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
+                            + "* " + bm_time \
+                            + " OD" + str(beatmap_data.overall_difficulty) \
+                            + " MAX" + str(beatmap_data_api.max_combo)
+                        sent = artist_name\
+                            + " | osu!taiko" \
+                            + " | " + accmiss + ": " \
+                            + pp_vals[0] + "pp" \
+                            + " | " + end_props
+                # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                elif ident == "mod":
+
+                    # checks for former acm data if any
+                    if name not in acm_data_s:
+                        pass
+                    else:
+                        acm_data = acm_data_s[name]
+                    mods = 0
+
+                    # reads args of message
+                    if split_msg[0].lower().find("hd") != -1:
+                        mods += 8
+                    if split_msg[0].lower().find("fl") != -1:
+                        mods += 1024
+                    if split_msg[0].lower().find("ez") != -1:
+                        mods += 2
+                    if split_msg[0].lower().find("nf") != -1:
+                        mods += 1
+                    if split_msg[0].lower().find("hr") != -1:
+                        mods += 16
+
+                    # sets mod names for output and checks if no args were passed
+                    if mods & 1 == 1:
+                        mods_name += "NF"
+                    if mods & 2 == 2:
+                        mods_name += "EZ"
+                    if mods & 8 == 8:
+                        mods_name += "HD"
                     if mods & 16 == 16:
+                        mods_name += "HR"
+                    if mods & 1024 == 1024:
+                        mods_name += "FL"
+                    if mods == 0:
                         return "These mods are not supported yet!"
 
-                    if acm_data in locals():
-                        acc, score = acm_data
-                    else:
-                        acc, score = (100, 1000000)
-                    pp_vals = (str(calc.calculatepp(beatmap_data, beatmap_data_api, mode=mode, acc=acc, score=score,
-                                                    mods=mods)),)
-                    accscore = str(acc) + "% " + str(score) + " " + mods_name
-                    end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
-                        + "* " + bm_time \
-                        + " OD" + str(beatmap_data.overall_difficulty) \
-                        + " " + str(beatmap_data.circle_size) + "key" \
-                        + " OBJ" + str(len(beatmap_data.hit_objects))
-                    sent = artist_name\
-                        + " | osu!mania" \
-                        + " | " + accscore + ": " \
-                        + pp_vals[0] + "pp" \
-                        + " | " + end_props
-                elif mode == 1:  # all mods as of now
-                    if acm_data in locals():
-                        acc, miss = acm_data
-                    else:
-                        acc, miss = (100, 0)
-                    pp_vals = (str(calc.calculatepp(beatmap_data, beatmap_data_api, mode, acc=acc, miss=miss,
-                                                    mods=mods)),)
-                    accmiss = str(acc) + "% " + str(miss) + "miss " + mods_name
-                    end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
-                        + "* " + bm_time \
-                        + " OD" + str(beatmap_data.overall_difficulty) \
-                        + " MAX" + str(beatmap_data_api.max_combo)
-                    sent = artist_name\
-                        + " | osu!taiko" \
-                        + " | " + accmiss + ": " \
-                        + pp_vals[0] + "pp" \
-                        + " | " + end_props
+                    mod_data_s[name] = mods
+                    if mode == 2:  # hd and fl only
+                        if mods & 1 == 1:
+                            return "These mods are not supported yet!"
+                        if mods & 2 == 2:
+                            return "These mods are not supported yet!"
+                        if mods & 16 == 16:
+                            return "These mods are not supported yet!"
+
+                        if acm_data in locals():
+                            acc, combo, miss = acm_data
+                        else:
+                            acc, combo, miss = (100, beatmap_data_api.max_combo, 0)
+                        pp_vals = (str(calc.calculatepp(beatmap_data,
+                                                        beatmap_data_api, mode, acc=acc,
+                                                        combo=combo, miss=miss,
+                                                        mods=mods)),)
+                        acccombomiss = str(acc) + "% " + str(combo) + "x " + str(miss) + "miss " + mods_name
+                        end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
+                                    + "* " + bm_time \
+                                    + " AR" + str(beatmap_data.approach_rate) \
+                                    + " MAX" + str(beatmap_data_api.max_combo)
+                        sent = artist_name \
+                               + " | osu!catch" \
+                               + " | " + acccombomiss + ": " \
+                               + pp_vals[0] + "pp" \
+                               + " | " + end_props
+                    elif mode == 3:  # nf and ez only
+                        if mods & 8 == 8:
+                            return "These mods are not supported yet!"
+                        if mods & 1024 == 1024:
+                            return "These mods are not supported yet!"
+                        if mods & 16 == 16:
+                            return "These mods are not supported yet!"
+
+                        if acm_data in locals():
+                            acc, score = acm_data
+                        else:
+                            acc, score = (100, 1000000)
+                        pp_vals = (
+                        str(calc.calculatepp(beatmap_data, beatmap_data_api, mode=mode, acc=acc, score=score,
+                                             mods=mods)),)
+                        accscore = str(acc) + "% " + str(score) + " " + mods_name
+                        end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
+                                    + "* " + bm_time \
+                                    + " OD" + str(beatmap_data.overall_difficulty) \
+                                    + " " + str(beatmap_data.circle_size) + "key" \
+                                    + " OBJ" + str(len(beatmap_data.hit_objects))
+                        sent = artist_name \
+                               + " | osu!mania" \
+                               + " | " + accscore + ": " \
+                               + pp_vals[0] + "pp" \
+                               + " | " + end_props
+                    elif mode == 1:  # all mods as of now
+                        if acm_data in locals():
+                            acc, miss = acm_data
+                        else:
+                            acc, miss = (100, 0)
+                        pp_vals = (str(calc.calculatepp(beatmap_data, beatmap_data_api, mode, acc=acc, miss=miss,
+                                                        mods=mods)),)
+                        accmiss = str(acc) + "% " + str(miss) + "miss " + mods_name
+                        end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
+                                    + "* " + bm_time \
+                                    + " OD" + str(beatmap_data.overall_difficulty) \
+                                    + " MAX" + str(beatmap_data_api.max_combo)
+                        sent = artist_name \
+                               + " | osu!taiko" \
+                               + " | " + accmiss + ": " \
+                               + pp_vals[0] + "pp" \
+                               + " | " + end_props
             # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
             return sent
 
         except IndexError:
-            return "There seems to be no link in your /np... Is this a beatmap you made?"
+            return "There seems to be no link in your /np... Is this a beatmap you made? A "
         except ModeError:
-            return "Something really bad went wrong, and I don't know what it is yet. Wait for my creator ^-^. " \
-                   "Ident:ModeError"
+            return "This map doesn\'t seem to have this mode... Somehow I haven't noticed so."
         except MsgError:
             return "Somehow your message got lost in my head... Send it again?"
         except NpError:
@@ -597,19 +557,23 @@ class ProgramLogic:
             return "Something's up, or I guess in this case, down, with your combo."
         except requests.exceptions.HTTPError as e:
             if 500 <= e.response.status_code <= 599:
-                return "The osu!api is down."
+                return "The osu!api is down. Please retry after a few minutes."
             else:
-                print(ConsoleColors.FAIL + "ERR: internet, " + str(e.response.status_code) + ConsoleColors.ENDC)
+                print(colorama.Back.RED + colorama.Style.BRIGHT + " ERROR " + colorama.Back.RESET +
+                " internet, " + str(e.response.status_code))
                 return "Something on my side malfunctioned, please retry."
         except:
-            rdm = random.randint(0,100000)
+            rdm = random.randint(0, 100000)
+            exc_type, exc_value, exc_traceback = sys.exc_info()
             e = traceback.format_exc()
             e = "\n\nid:" + str(rdm) + "\n" + e
             with open('err.log', 'a') as f:
                 f.write(e)
-            print(ConsoleColors.FAIL + "ERR: UNK, id:" + str(rdm) + ConsoleColors.ENDC)
-            return "Something really bad went wrong, and I don't know what it is yet. Wait for my creator ^-^." \
-                   " Ident:" + ident + " id:" + str(rdm)
+            print(colorama.Back.RED + colorama.Style.BRIGHT + " ERROR " + colorama.Back.RESET +
+                  " unknown, id:" + str(rdm))
+            return "Something really bad went wrong, and I don't know what it is yet." + \
+                   " Report this to my creator with !botreport [report contents] ^-^." + \
+                   " Error:" + exc_type.__name__ + " id:" + str(rdm)
 
 
 class Bot(irc.IRCClient):
@@ -634,7 +598,7 @@ class Bot(irc.IRCClient):
 
     def signedOn(self):
         """Called when bot has successfully signed on to server."""
-        print("Signed in!")  # don't log
+        print(colorama.Style.BRIGHT + "Signed in!")  # don't log
 
     def joined(self, channel):
         """Called when the bot joins the channel."""
@@ -644,7 +608,7 @@ class Bot(irc.IRCClient):
         """Called when the bot receives a message."""
         global osu_library
         user = user.split('!', 1)[0]
-        self.logic.log("<%s> %s" % (user, msg))
+        self.logic.log("<" + colorama.Fore.MAGENTA + user + colorama.Fore.WHITE + "> " + msg)
 
         # Check to see if they're sending me a private message
         if channel == self.nickname:
@@ -706,8 +670,9 @@ class Bot(irc.IRCClient):
                 command = msg.split(config.adminprefix, 1)[1].split()[0]
                 if command == "exit":
                     self.msg(user, "Exiting...")
+                    colorama.deinit()
                     reactor.stop()
-                if command == "regenerate":
+                if command == "regen":
                     osu_library = slider.library.Library.create_db(libdir)
                     self.msg(user, "Regenerated osu! library.")
         return
@@ -715,7 +680,7 @@ class Bot(irc.IRCClient):
     def action(self, user, channel, msg):
         """Called when the bot sees someone do an action."""
         user = user.split('!', 1)[0]
-        self.logic.log("* %s %s" % (user, msg))
+        self.logic.log(colorama.Fore.MAGENTA + "* " + user + colorama.Fore.WHITE + " " + msg)
         if channel == self.nickname:
             ftm = self.logic.sendstore(self.logic.FIRST_TIME_MSG, user, "firsttime.txt")
             um = self.logic.sendstore(self.logic.UPDATE_MSG, user, "updates.txt")
@@ -754,11 +719,13 @@ class BotFactory(protocol.ReconnectingClientFactory):
         return p
 
     def clientConnectionLost(self, connector, reason):
-        print('Lost connection.  Reason:', reason)
+        print(colorama.Back.RED + colorama.Style.BRIGHT + " ERROR " + colorama.Back.RESET +
+              'Lost connection.  Reason:' + reason)
         protocol.ReconnectingClientFactory.clientConnectionLost(self, connector, reason)
 
     def clientConnectionFailed(self, connector, reason):
-        print('Connection failed. Reason:', reason)
+        print(colorama.Back.RED + colorama.Style.BRIGHT + " ERROR " + colorama.Back.RESET
+              + 'Connection failed. Reason:' + reason)
         protocol.ReconnectingClientFactory.clientConnectionFailed(self, connector, reason)
 
 

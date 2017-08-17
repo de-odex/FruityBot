@@ -9,7 +9,7 @@ def read():
 
 setup(
     name='FruityBot',
-    version='2.1.0-alpha',
+    version='2.2.0-alpha',
     packages=find_packages(),
     url='https://github.com/de-odex/FruityBot',
     license='MIT',
@@ -26,7 +26,7 @@ setup(
         'Topic :: Games/Entertainment',
     ],
     install_requires=['twisted', 'slider', 'colorama', 'requests'],
-    python_requires="3.6.2",
+    python_requires="3.6",
     dependency_links=['https://github.com/llllllllll/slider/tarball/master#egg=0.1.0'],
     entry_points={
         'console_scripts': [
