@@ -86,7 +86,7 @@ class ProgramLogic:
         self.repfile = open("reports.log", "a")
         self.UPDATE_MSG = \
             "eyo, its boterino here with an update ([https://aeverr.s-ul.eu/CpdBefOU sic]). " \
-            "Bugfix #1: maps with asterisks work now"
+            "[https://discord.gg/2NjBpNa We have a Discord server]"
         self.FIRST_TIME_MSG = \
             "Welcome, and thanks for using my bot! Check out https://github.com/de-odex/aEverrBot/wiki for commands. " \
             "!botreport to report a bug."
@@ -608,7 +608,7 @@ class Bot(irc.IRCClient):
         """Called when the bot receives a message."""
         global osu_library
         user = user.split('!', 1)[0]
-        self.logic.log("<" + colorama.Fore.MAGENTA + user + colorama.Fore.WHITE + "> " + msg)
+
 
         # Check to see if they're sending me a private message
         if channel == self.nickname:
@@ -666,6 +666,7 @@ class Bot(irc.IRCClient):
                         self.msg(user, "What are you reporting?")
                 else:
                     self.msg(user, "Invalid command. " + config.prefix + "h for help.")
+                self.logic.log("<" + colorama.Fore.MAGENTA + user + colorama.Fore.WHITE + "> " + colorama.Fore.YELLOW + msg)
             elif (user == self.nickname or user == config.adminname) and msg.startswith(config.adminprefix):
                 command = msg.split(config.adminprefix, 1)[1].split()[0]
                 if command == "exit":
@@ -675,7 +676,9 @@ class Bot(irc.IRCClient):
                 if command == "regen":
                     osu_library = slider.library.Library.create_db(libdir)
                     self.msg(user, "Regenerated osu! library.")
-        return
+                self.logic.log("<" + colorama.Fore.MAGENTA + user + colorama.Fore.WHITE + "> " + colorama.Fore.BLUE + msg)
+            else:
+                self.logic.log("<" + colorama.Fore.MAGENTA + user + colorama.Fore.WHITE + "> " + colorama.Fore.WHITE + msg)
 
     def action(self, user, channel, msg):
         """Called when the bot sees someone do an action."""
@@ -688,7 +691,6 @@ class Bot(irc.IRCClient):
                 self.msg(user, ftm)
             if um:
                 self.msg(user, um)
-
             sentmsg = self.logic.sendpp(msg, user, "np")
 
             if sentmsg:
@@ -697,7 +699,8 @@ class Bot(irc.IRCClient):
                 new_path = os.path.relpath('log\\', cur_path)
                 fin_path = os.path.join(new_path, "sentcommands.txt")
                 self.logic.savetofile(sentmsg, open(fin_path, "a"))
-            return
+        else:
+            pass
 
 
 class BotFactory(protocol.ReconnectingClientFactory):
