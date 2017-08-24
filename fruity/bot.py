@@ -4,7 +4,7 @@
 
 # twisted imports
 from twisted.words.protocols import irc
-from twisted.internet import reactor, protocol
+from twisted.internet import reactor, protocol, threads, defer
 from twisted.python import log
 
 # system imports
@@ -20,11 +20,12 @@ import requests
 import pathlib
 import colorama
 import random
+import importlib
 
 colorama.init(autoreset=True)
 
 try:
-    import config, calc
+    import config, calc, recommend
 except ImportError:
     print(colorama.Back.RED + colorama.Style.BRIGHT + " ERROR " + colorama.Back.RESET +
           "No modules. Please re-download and make a config.py.")
@@ -33,9 +34,16 @@ except ImportError:
 
 # user database for settings
 userdb = sqlite3.connect('userpref.db')
-upcur = userdb.cursor()
-userdb.execute("CREATE TABLE IF NOT EXISTS userdb (user INT PRIMARY KEY, mode INT)")
-userdb.commit()
+userdb.isolation_level = None
+try:
+    upcur = userdb.cursor()
+    upcur.execute("BEGIN")
+    upcur.execute("CREATE TABLE IF NOT EXISTS userdb (user INT PRIMARY KEY, mode INT)")
+    upcur.execute("COMMIT")
+except userdb.Error:
+    print(colorama.Back.RED + colorama.Style.BRIGHT + " ERROR " + colorama.Back.RESET
+          + "failed to create the database!")
+    upcur.execute("ROLLBACK")
 
 # Library creation if does not exist
 libdir = pathlib.Path("./osulib")
@@ -43,15 +51,14 @@ libdir = libdir.absolute()
 
 if not libdir.exists():
     os.makedirs(libdir)
-    print(colorama.Style.BRIGHT + "Created osu! library")
     osu_library = slider.library.Library.create_db(libdir)
+    print(colorama.Style.BRIGHT + "Created osu! library")
 else:
     osu_library = slider.library.Library(libdir)
 
 beatmap_data_s = {}
 acm_data_s = {}
 mod_data_s = {}
-first_time = time.time()
 
 
 class ModeError(Exception):
@@ -86,9 +93,10 @@ class ProgramLogic:
         self.repfile = open("reports.log", "a")
         self.UPDATE_MSG = \
             "eyo, its boterino here with an update ([https://aeverr.s-ul.eu/CpdBefOU sic]). " \
-            "[https://discord.gg/2NjBpNa We have a Discord server]"
+            "[https://discord.gg/2NjBpNa We have a Discord server]. ZeroDivisionError fixed."
         self.FIRST_TIME_MSG = \
-            "Welcome, and thanks for using my bot! Check out https://github.com/de-odex/aEverrBot/wiki for commands. " \
+            "Welcome, and thanks for using my bot! " \
+            "Check out [https://github.com/de-odex/FruityBot/wiki the wiki] for commands. " \
             "!botreport to report a bug."
         self.osu_api_client = slider.client.Client(osu_library, config.api_key)
 
@@ -140,34 +148,43 @@ class ProgramLogic:
         else:
             return False
 
-    def setpref(self, message, name):
-        global userdb, upcur
-        split_msg = message.split()
+    def check_update(self, msg, user, file):
+        x = self.sendstore(msg, user, file)
+        if x:
+            return x
 
-        if split_msg[0] == "mode":
-            if split_msg[1].lower() == "catch":
+    def setpref(self, message, name):
+        split_msg = message.split("!set ")[1]
+        split_msg2 = split_msg.split()
+
+        if split_msg2[0] == "mode":
+            if split_msg2[1].lower() == "catch":
                 mode = 2
-            elif split_msg[1].lower() == "mania":
+            elif split_msg2[1].lower() == "mania":
                 mode = 3
-            elif split_msg[1].lower() == "taiko":
+            elif split_msg2[1].lower() == "taiko":
                 mode = 1
             else:
                 return "Invalid command"
-
-            upcur.execute("SELECT * FROM userdb WHERE user=?", (name,))
-            if upcur.fetchone() is None:
-                userdb.execute("INSERT INTO userdb (user, mode) VALUES (?,?)", (name, mode))
-                userdb.commit()
-            else:
-                userdb.execute("UPDATE userdb set mode = ? where user = ?", (mode, name))
-                userdb.commit()
-            return "Set <" + split_msg[0] + "> to <" + split_msg[1] + ">"
+            try:
+                userdb = sqlite3.connect('userpref.db')
+                upcur = userdb.cursor()
+                upcur.execute("BEGIN")
+                upcur.execute("SELECT * FROM userdb WHERE user=?", (name,))
+                if upcur.fetchone() is None:
+                    upcur.execute("INSERT INTO userdb (user, mode) VALUES (?,?)", (name, mode))
+                else:
+                    upcur.execute("UPDATE userdb SET mode = ? WHERE user = ?", (mode, name))
+                upcur.execute("COMMIT")
+            except userdb.Error:
+                upcur.execute("ROLLBACK")
+            return "Set <" + split_msg2[0] + "> to <" + split_msg2[1] + ">"
         else:
             return "Invalid command"
 
     def sendpp(self, message, name, ident="np"):
-        global beatmap_data_s, mod_data_s, userdb, upcur, osu_library
         try:
+            global beatmap_data_s, mod_data_s, osu_library
             # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
             if ident == "np":
                 link = re.findall('http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+',
@@ -187,13 +204,20 @@ class ProgramLogic:
                 if int(beatmap_data.mode) != 0:
                     mode = int(beatmap_data.mode)
                 else:
-                    upcur.execute("SELECT * FROM userdb WHERE user=?", (name,))
-                    modedb = upcur.fetchone()
-                    if modedb is None:
-                        return "Please set a mode with !set mode [catch|mania|taiko]"
-                    else:
-                        upcur.execute("SELECT mode FROM userdb WHERE user=?", (name,))
-                        mode = modedb[1]
+                    try:
+                        userdb = sqlite3.connect('userpref.db')
+                        upcur = userdb.cursor()
+                        upcur.execute("BEGIN")
+                        upcur.execute("SELECT * FROM userdb WHERE user=?", (name,))
+                        modedb = upcur.fetchone()
+                        if modedb is None:
+                            return "Please set a mode with !set mode [catch|mania|taiko]"
+                        else:
+                            upcur.execute("SELECT mode FROM userdb WHERE user=?", (name,))
+                            mode = modedb[1]
+                            upcur.execute("COMMIT")
+                    except userdb.Error:
+                        upcur.execute("ROLLBACK")
 
                 beatmap_data_api = self.osu_api_client.beatmap(beatmap_id=int(beatmap_id),
                                                                include_converted_beatmaps=True,
@@ -213,47 +237,47 @@ class ProgramLogic:
                                str(calc.calculatepp(beatmap_data, beatmap_data_api, mode, acc=99)),
                                str(calc.calculatepp(beatmap_data, beatmap_data_api, mode, acc=98.5)))
                     end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
-                        + "* " + bm_time \
-                        + " AR" + str(beatmap_data.approach_rate) \
-                        + " MAX" + str(beatmap_data_api.max_combo)
-                    sent = artist_name\
-                        + " | osu!catch" \
-                        + " | SS: " + pp_vals[0] + "pp" \
-                        + " | 99.5% FC: " + pp_vals[1] + "pp"\
-                        + " | 99% FC: " + pp_vals[2] + "pp" \
-                        + " | 98.5% FC: " + pp_vals[3] + "pp" \
-                        + " | " + end_props
+                                + "* " + bm_time \
+                                + " AR" + str(beatmap_data.approach_rate) \
+                                + " MAX" + str(beatmap_data_api.max_combo)
+                    sent = artist_name \
+                           + " | osu!catch" \
+                           + " | SS: " + pp_vals[0] + "pp" \
+                           + " | 99.5% FC: " + pp_vals[1] + "pp" \
+                           + " | 99% FC: " + pp_vals[2] + "pp" \
+                           + " | 98.5% FC: " + pp_vals[3] + "pp" \
+                           + " | " + end_props
                 elif mode == 3:
                     pp_vals = (str(calc.calculatepp(beatmap_data, beatmap_data_api, mode=mode)),
                                str(calc.calculatepp(beatmap_data, beatmap_data_api, mode=mode, acc=99, score=970000)),
                                str(calc.calculatepp(beatmap_data, beatmap_data_api, mode=mode, acc=97, score=900000)))
                     end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
-                        + "* " + bm_time \
-                        + " OD" + str(beatmap_data.overall_difficulty) \
-                        + " " + str(beatmap_data.circle_size) + "key" \
-                        + " OBJ" + str(len(beatmap_data.hit_objects))
+                                + "* " + bm_time \
+                                + " OD" + str(beatmap_data.overall_difficulty) \
+                                + " " + str(calc.keycount(beatmap_data)) + "key" \
+                                + " OBJ" + str(len(beatmap_data.hit_objects))
                     sent = artist_name \
-                        + " | osu!mania" \
-                        + " | SS: " + pp_vals[0] + "pp" \
-                        + " | 99% 970k: " + pp_vals[1] + "pp" \
-                        + " | 97% 900k: " + pp_vals[2] + "pp" \
-                        + " | " + end_props
+                           + " | osu!mania" \
+                           + " | SS: " + pp_vals[0] + "pp" \
+                           + " | 99% 970k: " + pp_vals[1] + "pp" \
+                           + " | 97% 900k: " + pp_vals[2] + "pp" \
+                           + " | " + end_props
                 elif mode == 1:
                     pp_vals = (str(calc.calculatepp(beatmap_data, beatmap_data_api, mode=mode)),
                                str(calc.calculatepp(beatmap_data, beatmap_data_api, mode=mode, acc=99)),
                                str(calc.calculatepp(beatmap_data, beatmap_data_api, mode=mode, acc=98)))
                     end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
-                        + "* " + bm_time \
-                        + " OD" + str(beatmap_data.overall_difficulty) \
-                        + " MAX" + str(beatmap_data_api.max_combo)
+                                + "* " + bm_time \
+                                + " OD" + str(beatmap_data.overall_difficulty) \
+                                + " MAX" + str(beatmap_data_api.max_combo)
                     sent = artist_name \
-                        + " | osu!taiko" \
-                        + " | SS: " + pp_vals[0] + "pp" \
-                        + " | 99% FC: " + pp_vals[1] + "pp" \
-                        + " | 98% FC: " + pp_vals[2] + "pp" \
-                        + " | " + end_props
+                           + " | osu!taiko" \
+                           + " | SS: " + pp_vals[0] + "pp" \
+                           + " | 99% FC: " + pp_vals[1] + "pp" \
+                           + " | 98% FC: " + pp_vals[2] + "pp" \
+                           + " | " + end_props
             # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-            elif ident == "acm" or ident == "mod":
+            elif ident == "acm" or ident == "mod" or ident == "key":
                 mods_name = ""
                 if name not in beatmap_data_s:
                     raise NpError
@@ -269,13 +293,20 @@ class ProgramLogic:
                 if int(beatmap_data.mode) != 0:
                     mode = int(beatmap_data.mode)
                 else:
-                    upcur.execute("SELECT * FROM userdb WHERE user=?", (name,))
-                    modedb = upcur.fetchone()
-                    if modedb is None:
-                        return "Please set a mode with !set mode [catch|mania|taiko]"
-                    else:
-                        upcur.execute("SELECT mode FROM userdb WHERE user=?", (name,))
-                        mode = modedb[1]
+                    try:
+                        userdb = sqlite3.connect('userpref.db')
+                        upcur = userdb.cursor()
+                        upcur.execute("BEGIN")
+                        upcur.execute("SELECT * FROM userdb WHERE user=?", (name,))
+                        modedb = upcur.fetchone()
+                        if modedb is None:
+                            return "Please set a mode with !set mode [catch|mania|taiko]"
+                        else:
+                            upcur.execute("SELECT mode FROM userdb WHERE user=?", (name,))
+                            mode = modedb[1]
+                            upcur.execute("COMMIT")
+                    except userdb.Error:
+                        upcur.execute("ROLLBACK")
 
                 if mode_api != mode:
                     beatmap_data_api = self.osu_api_client.beatmap(beatmap_id=beatmap_id,
@@ -355,19 +386,19 @@ class ProgramLogic:
 
                         acm_data_s[name] = [acc, combo, miss]
                         pp_vals = (str(calc.calculatepp(beatmap_data,
-                                       beatmap_data_api, mode, acc=acc,
-                                       max_player_combo=combo, miss=miss,
-                                       mods=mods)),)
+                                                        beatmap_data_api, mode, acc=acc,
+                                                        max_player_combo=combo, miss=miss,
+                                                        mods=mods)),)
                         acccombomiss = str(acc) + "% " + str(combo) + "x " + str(miss) + "miss " + mods_name
                         end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
-                            + "* " + bm_time \
-                            + " AR" + str(beatmap_data.approach_rate) \
-                            + " MAX" + str(beatmap_data_api.max_combo)
-                        sent = artist_name\
-                            + " | osu!catch" \
-                            + " | " + acccombomiss + ": " \
-                            + pp_vals[0] + "pp" \
-                            + " | " + end_props
+                                    + "* " + bm_time \
+                                    + " AR" + str(beatmap_data.approach_rate) \
+                                    + " MAX" + str(beatmap_data_api.max_combo)
+                        sent = artist_name \
+                               + " | osu!catch" \
+                               + " | " + acccombomiss + ": " \
+                               + pp_vals[0] + "pp" \
+                               + " | " + end_props
                     elif mode == 3:
                         try:
                             score = int(score)
@@ -388,19 +419,19 @@ class ProgramLogic:
 
                         acm_data_s[name] = [acc, score]
                         pp_vals = (str(calc.calculatepp(beatmap_data,
-                                       beatmap_data_api, mode=mode, acc=acc,
-                                       score=score, mods=mods)),)
+                                                        beatmap_data_api, mode=mode, acc=acc,
+                                                        score=score, mods=mods)),)
                         accscore = str(acc) + "% " + str(score) + " " + mods_name
                         end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
-                            + "* " + bm_time \
-                            + " OD" + str(beatmap_data.overall_difficulty) \
-                            + " " + str(beatmap_data.circle_size) + "key" \
-                            + " OBJ" + str(len(beatmap_data.hit_objects))
-                        sent = artist_name\
-                            + " | osu!mania" \
-                            + " | " + accscore + ": " \
-                            + pp_vals[0] + "pp" \
-                            + " | " + end_props
+                                    + "* " + bm_time \
+                                    + " OD" + str(beatmap_data.overall_difficulty) \
+                                    + " " + str(calc.keycount(beatmap_data)) + "key" \
+                                    + " OBJ" + str(len(beatmap_data.hit_objects))
+                        sent = artist_name \
+                               + " | osu!mania" \
+                               + " | " + accscore + ": " \
+                               + pp_vals[0] + "pp" \
+                               + " | " + end_props
                     elif mode == 1:
                         try:
                             miss = int(miss)
@@ -421,18 +452,18 @@ class ProgramLogic:
 
                         acm_data_s[name] = [acc, miss]
                         pp_vals = (str(calc.calculatepp(beatmap_data,
-                                       beatmap_data_api, mode=mode, acc=acc,
-                                       miss=miss, mods=mods)),)
+                                                        beatmap_data_api, mode=mode, acc=acc,
+                                                        miss=miss, mods=mods)),)
                         accmiss = str(acc) + "% " + str(miss) + "miss " + mods_name
                         end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
-                            + "* " + bm_time \
-                            + " OD" + str(beatmap_data.overall_difficulty) \
-                            + " MAX" + str(beatmap_data_api.max_combo)
-                        sent = artist_name\
-                            + " | osu!taiko" \
-                            + " | " + accmiss + ": " \
-                            + pp_vals[0] + "pp" \
-                            + " | " + end_props
+                                    + "* " + bm_time \
+                                    + " OD" + str(beatmap_data.overall_difficulty) \
+                                    + " MAX" + str(beatmap_data_api.max_combo)
+                        sent = artist_name \
+                               + " | osu!taiko" \
+                               + " | " + accmiss + ": " \
+                               + pp_vals[0] + "pp" \
+                               + " | " + end_props
                 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
                 elif ident == "mod":
 
@@ -485,7 +516,7 @@ class ProgramLogic:
                         pp_vals = (str(calc.calculatepp(beatmap_data,
                                                         beatmap_data_api, mode, acc=acc,
                                                         combo=combo, miss=miss,
-                                                        mods=mods)),)
+                                                        mods=mods)))
                         acccombomiss = str(acc) + "% " + str(combo) + "x " + str(miss) + "miss " + mods_name
                         end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
                                     + "* " + bm_time \
@@ -509,13 +540,13 @@ class ProgramLogic:
                         else:
                             acc, score = (100, 1000000)
                         pp_vals = (
-                        str(calc.calculatepp(beatmap_data, beatmap_data_api, mode=mode, acc=acc, score=score,
-                                             mods=mods)),)
+                            str(calc.calculatepp(beatmap_data, beatmap_data_api, mode=mode, acc=acc, score=score,
+                                                 mods=mods)),)
                         accscore = str(acc) + "% " + str(score) + " " + mods_name
                         end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
                                     + "* " + bm_time \
                                     + " OD" + str(beatmap_data.overall_difficulty) \
-                                    + " " + str(beatmap_data.circle_size) + "key" \
+                                    + " " + str(calc.keycount(beatmap_data)) + "key" \
                                     + " OBJ" + str(len(beatmap_data.hit_objects))
                         sent = artist_name \
                                + " | osu!mania" \
@@ -539,29 +570,72 @@ class ProgramLogic:
                                + " | " + accmiss + ": " \
                                + pp_vals[0] + "pp" \
                                + " | " + end_props
+                # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                elif ident == "key":
+
+                    # checks for former mod data if any
+                    if name not in mod_data_s:
+                        mods = 0
+                    else:
+                        mods = mod_data_s[name]
+
+                    # reads args of message
+                    keys = re.sub('\D', '', split_msg[0])
+                    keys = int(keys)
+                    if not 1 < keys < 9 and  self.isfloat(keys):
+                        return "You gave an invalid amount of keys!"
+
+                    # sets key names for output
+                    key_name = str(keys)
+
+                    if mode == 2:
+                        return "This mode doesn't have a keys modifier!"
+                    elif mode == 3:
+                        pp_vals = (
+                            str(calc.calculatepp(beatmap_data, beatmap_data_api, mode=mode,
+                                                 mods=mods, keys=keys)),
+                            str(calc.calculatepp(beatmap_data, beatmap_data_api, mode=mode, acc=99, score=970000,
+                                                 mods=mods, keys=keys)),
+                            str(calc.calculatepp(beatmap_data, beatmap_data_api, mode=mode, acc=97, score=900000,
+                                                 mods=mods, keys=keys)))
+
+                        end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
+                                    + "* " + bm_time \
+                                    + " OD" + str(beatmap_data.overall_difficulty) \
+                                    + " " + key_name + "key" \
+                                    + " OBJ" + str(len(beatmap_data.hit_objects))
+                        sent = artist_name \
+                               + " | osu!mania" \
+                               + " | SS: " + pp_vals[0] + "pp" \
+                               + " | 99% 970k: " + pp_vals[1] + "pp" \
+                               + " | 97% 900k: " + pp_vals[2] + "pp" \
+                               + " | " + end_props
+                    elif mode == 1:
+                        return "This mode doesn't have a keys modifier!"
             # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
             return sent
-
         except IndexError:
-            return "There seems to be no link in your /np... Is this a beatmap you made? A "
+            return "There seems to be no link in your /np... Is this a beatmap you made?"
         except ModeError:
             return "This map doesn\'t seem to have this mode... Somehow I haven't noticed so."
         except MsgError:
-            return "Somehow your message got lost in my head... Send it again?"
+            return "Somehow your message got lost in my head... Send it again? (No arguments)"
         except NpError:
             return "You haven't /np'd me anything yet!"
         except AttrError:
             return "Do it like me, \"!acc 95 200x 1m\". Or something, I dunno. " \
-                   "Recheck https://github.com/de-odex/aEverrBot/wiki"
+                   "See [https://github.com/de-odex/FruityBot/wiki the wiki!]"
         except ComboError:
             return "Something's up, or I guess in this case, down, with your combo."
-        except requests.exceptions.HTTPError as e:
-            if 500 <= e.response.status_code <= 599:
-                return "The osu!api is down. Please retry after a few minutes."
+        except requests.exceptions.HTTPError as exc:
+            if 500 <= exc.response.status_code <= 599:
+                sendpp(message, name, ident)
+                return "If you're seeing this message, that means my bot broke somehow. Error:OsuApi"
             else:
                 print(colorama.Back.RED + colorama.Style.BRIGHT + " ERROR " + colorama.Back.RESET +
-                " internet, " + str(e.response.status_code))
-                return "Something on my side malfunctioned, please retry."
+                      " internet, " + str(e.response.status_code))
+                sendpp(message, name, ident)
+                return "If you're seeing this message, that means my bot broke somehow. Error:FrtSrv"
         except:
             rdm = random.randint(0, 100000)
             exc_type, exc_value, exc_traceback = sys.exc_info()
@@ -570,11 +644,12 @@ class ProgramLogic:
             with open('err.log', 'a') as f:
                 f.write(e)
             print(colorama.Back.RED + colorama.Style.BRIGHT + " ERROR " + colorama.Back.RESET +
-                  " unknown, id:" + str(rdm))
+                  " " + exc_type.__name__ + ", id:" + str(rdm))
             return "Something really bad went wrong, and I don't know what it is yet." + \
-                   " Report this to my creator with !botreport [report contents] ^-^." + \
-                   " Error:" + exc_type.__name__ + " id:" + str(rdm)
+                   " ^-^ Error:" + exc_type.__name__ + " id:" + str(rdm)
 
+    def sendrec(self, message, name):
+        recommend.recommend(self.osu_api_client)
 
 class Bot(irc.IRCClient):
     """An IRC bot."""
@@ -583,6 +658,14 @@ class Bot(irc.IRCClient):
     password = config.password
     lineRate = 1
     heartbeatInterval = 64
+
+    def __init__(self, first_time):
+        self.first_time = first_time
+
+    def logCommand(self, sentmsg, user):
+        self.msg(user, sentmsg)
+        self.logic.savetofile(sentmsg, open(
+            os.path.join(os.path.relpath('log\\', os.path.dirname(__file__)), "sentcommands.txt"), "a"))
 
     def connectionMade(self):
         irc.IRCClient.connectionMade(self)
@@ -609,52 +692,39 @@ class Bot(irc.IRCClient):
         global osu_library
         user = user.split('!', 1)[0]
 
-
         # Check to see if they're sending me a private message
         if channel == self.nickname:
             if msg.startswith(config.prefix):
-                ftm = self.logic.sendstore(self.logic.FIRST_TIME_MSG, user, "firsttime.txt")
-                um = self.logic.sendstore(self.logic.UPDATE_MSG, user, "updates.txt")
-                if ftm:
-                    self.msg(user, ftm)
-                if um:
-                    self.msg(user, um)
+                self.logic.check_update(self.logic.FIRST_TIME_MSG, user, "firsttime.txt")
+                self.logic.check_update(self.logic.UPDATE_MSG, user, "updates.txt")
                 command = msg.split(config.prefix, 1)[1].split()[0]
 
                 # ~~~~~~~~~~~~~~~~~~~~~~~~ THE COMMANDS ~~~~~~~~~~~~~~~~~~~~~~~~
                 if command == "set":
-                    msg = msg.split("!set ")[1]
-                    self.msg(user, self.logic.setpref(msg, user))
+                    d = threads.deferToThread(self.logic.setpref, msg, user)
+                    d.addCallback(self.logCommand, user)
+                    d.addErrback(log.err)
                 elif command == "acc":
-                    try:
-                        sentmsg = self.logic.sendpp(msg, user, "acm")
-                        if sentmsg:
-                            self.msg(user, sentmsg)
-                            cur_path = os.path.dirname(__file__)
-                            new_path = os.path.relpath('log\\', cur_path)
-                            fin_path = os.path.join(new_path, "sentcommands.txt")
-                            self.logic.savetofile(sentmsg, open(fin_path, "a"))
-                    except:
-                        traceback.print_exc(file=open("err.log", "a"))
-                        self.msg(user, "You didn't give me accuracy, combo, or misses?")
+                    d = threads.deferToThread(self.logic.sendpp, msg, user, "acm")
+                    d.addCallback(self.logCommand, user)
+                    d.addErrback(log.err)
                 elif command == "with":
-                    try:
-                        sentmsg = self.logic.sendpp(msg, user, "mod")
-                        if sentmsg:
-                            self.msg(user, sentmsg)
-                            cur_path = os.path.dirname(__file__)
-                            new_path = os.path.relpath('log\\', cur_path)
-                            fin_path = os.path.join(new_path, "sentcommands.txt")
-                            self.logic.savetofile(sentmsg, open(fin_path, "a"))
-                    except:
-                        traceback.print_exc(file=open("err.log", "a"))
-                        self.msg(user, "No mods?")
+                    d = threads.deferToThread(self.logic.sendpp, msg, user, "mod")
+                    d.addCallback(self.logCommand, user)
+                    d.addErrback(log.err)
+                # elif command == "keys":
+                #     d = threads.deferToThread(self.logic.sendpp, msg, user, "key")
+                #     d.addCallback(self.logCommand, user)
+                #     d.addErrback(self.catchError, user)
+                #     d.addErrback(log.err)
                 elif command == "h":
-                    self.msg(user, "Need help? Check https://github.com/de-odex/aEverrBot/wiki for commands.")
+                    self.msg(user, "Need help? Check [https://github.com/de-odex/FruityBot/wiki the wiki] for commands.")
                 elif command == "r":
-                    self.msg(user, "Command doesn't work yet, stay tuned! Under development.")
+                    self.logic.sendrec(msg, user)
+                    pass
                 elif command == "uptime":
-                    self.msg(user, time.strftime("%H;%M;%S", time.gmtime(time.time() - first_time)) + " since start.")
+                    self.msg(user,
+                             time.strftime("%H;%M;%S", time.gmtime(time.time() - self.first_time)) + " since start.")
                 elif command == "time":
                     self.msg(user, "Local time: " + time.strftime("%B %d %H:%M:%S", time.localtime(time.time())))
                 elif command == "botreport":
@@ -666,7 +736,8 @@ class Bot(irc.IRCClient):
                         self.msg(user, "What are you reporting?")
                 else:
                     self.msg(user, "Invalid command. " + config.prefix + "h for help.")
-                self.logic.log("<" + colorama.Fore.MAGENTA + user + colorama.Fore.WHITE + "> " + colorama.Fore.YELLOW + msg)
+                self.logic.log("<" + colorama.Fore.MAGENTA + user + colorama.Fore.WHITE + "> "
+                               + colorama.Fore.YELLOW + msg)
             elif (user == self.nickname or user == config.adminname) and msg.startswith(config.adminprefix):
                 command = msg.split(config.adminprefix, 1)[1].split()[0]
                 if command == "exit":
@@ -676,29 +747,32 @@ class Bot(irc.IRCClient):
                 if command == "regen":
                     osu_library = slider.library.Library.create_db(libdir)
                     self.msg(user, "Regenerated osu! library.")
-                self.logic.log("<" + colorama.Fore.MAGENTA + user + colorama.Fore.WHITE + "> " + colorama.Fore.BLUE + msg)
+                if command == "reload":
+                    try:
+                        split_msg = msg.split()[1]
+                        importlib.reload(importlib.import_module(split_msg))
+                        self.msg(user, "Reloaded " + split_msg + ".")
+                    except:
+                        exc_type, exc_value, exc_traceback = sys.exc_info()
+                        self.msg(user, "An error has occurred. " + exc_type.__name__)
+                self.logic.log("<" + colorama.Fore.MAGENTA + user + colorama.Fore.WHITE + "> "
+                               + colorama.Fore.BLUE + msg)
             else:
-                self.logic.log("<" + colorama.Fore.MAGENTA + user + colorama.Fore.WHITE + "> " + colorama.Fore.WHITE + msg)
+                self.logic.log("<" + colorama.Fore.MAGENTA + user + colorama.Fore.WHITE + "> "
+                               + colorama.Fore.WHITE + msg)
 
     def action(self, user, channel, msg):
         """Called when the bot sees someone do an action."""
         user = user.split('!', 1)[0]
         self.logic.log(colorama.Fore.MAGENTA + "* " + user + colorama.Fore.WHITE + " " + msg)
         if channel == self.nickname:
-            ftm = self.logic.sendstore(self.logic.FIRST_TIME_MSG, user, "firsttime.txt")
-            um = self.logic.sendstore(self.logic.UPDATE_MSG, user, "updates.txt")
-            if ftm:
-                self.msg(user, ftm)
-            if um:
-                self.msg(user, um)
-            sentmsg = self.logic.sendpp(msg, user, "np")
 
-            if sentmsg:
-                self.msg(user, sentmsg)
-                cur_path = os.path.dirname(__file__)
-                new_path = os.path.relpath('log\\', cur_path)
-                fin_path = os.path.join(new_path, "sentcommands.txt")
-                self.logic.savetofile(sentmsg, open(fin_path, "a"))
+            self.logic.check_update(self.logic.FIRST_TIME_MSG, user, "firsttime.txt")
+            self.logic.check_update(self.logic.UPDATE_MSG, user, "updates.txt")
+            d = threads.deferToThread(self.logic.sendpp, msg, user, "np")
+            d.addCallback(self.logCommand, user)
+            d.addErrback(log.err)
+
         else:
             pass
 
@@ -712,23 +786,23 @@ class BotFactory(protocol.ReconnectingClientFactory):
     maxDelay = 5
     initialDelay = 5
 
-    def __init__(self, channel, filename):
-        self.channel = channel
+    def __init__(self, filename):
         self.filename = filename
+        self.first_time = time.time()
 
     def buildProtocol(self, addr):
-        p = Bot()
+        p = Bot(self.first_time)
         p.factory = self
         return p
 
     def clientConnectionLost(self, connector, reason):
         print(colorama.Back.RED + colorama.Style.BRIGHT + " ERROR " + colorama.Back.RESET +
-              'Lost connection.  Reason:' + reason)
+              ' Lost connection.  Reason:' + str(reason))
         protocol.ReconnectingClientFactory.clientConnectionLost(self, connector, reason)
 
     def clientConnectionFailed(self, connector, reason):
-        print(colorama.Back.RED + colorama.Style.BRIGHT + " ERROR " + colorama.Back.RESET
-              + 'Connection failed. Reason:' + reason)
+        print(colorama.Back.RED + colorama.Style.BRIGHT + " ERROR " + colorama.Back.RESET +
+              ' Connection failed. Reason:' + str(reason))
         protocol.ReconnectingClientFactory.clientConnectionFailed(self, connector, reason)
 
 
@@ -737,13 +811,14 @@ def main():
     log.startLogging(sys.stdout)
 
     # create factory protocol and application
-    f = BotFactory("bottest", "logs.log")
+    f = BotFactory("logs.log")
 
     # connect factory to this host and port
     reactor.connectTCP(config.server, 6667, f)
 
     # run bot
     reactor.run()
+
 
 if __name__ == '__main__':
     main()

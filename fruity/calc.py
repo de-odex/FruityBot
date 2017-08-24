@@ -1,7 +1,8 @@
 
-import math
+import math, slider
 
-def calculatepp(osubdata, osubdata_api, mode, acc=100, max_player_combo=0, miss=0, score=1000000, mods=0):
+
+def calculatepp(osubdata, osubdata_api, mode, acc=100, max_player_combo=0, miss=0, score=1000000, mods=0, keys=None):
     # pp returning
     if mode == 2:
         r = __CatchTheBeat()
@@ -9,10 +10,24 @@ def calculatepp(osubdata, osubdata_api, mode, acc=100, max_player_combo=0, miss=
                              osubdata_api=osubdata_api)
     elif mode == 3:
         r = __Mania()
-        return r.calculatepp(acc=acc, score=score, mods=mods, osubdata=osubdata, osubdata_api=osubdata_api)
+        return r.calculatepp(acc=acc, score=score, mods=mods, keys=keys, osubdata=osubdata, osubdata_api=osubdata_api)
     elif mode == 1:
         r = __Taiko()
         return r.calculatepp(acc=acc, miss=miss, mods=mods, osubdata=osubdata, osubdata_api=osubdata_api)
+
+
+def keycount(beatmap):
+    percent = sum(1 for x in beatmap.hit_objects if
+                  isinstance(x, slider.beatmap.Slider) or
+                  isinstance(x, slider.beatmap.Spinner)) \
+              / len(beatmap.hit_objects)
+    if percent < 0.2:
+        return 7
+    if (percent < 0.3 or round(beatmap.circle_size) >= 5):
+        return 7 if round(beatmap.overall_difficulty) > 5 else 6
+    if (percent > 0.6):
+        return 5 if round(beatmap.overall_difficulty) > 4 else 4
+    return max(4, min(round(beatmap.overall_difficulty) + 1, 7))
 
 
 class __CatchTheBeat:
@@ -54,11 +69,24 @@ class __Mania:
     def __init__(self):
         pass
 
-    def calculatepp(self, osubdata, osubdata_api, acc=100, score=1000000, mods=0):
+    def calculatepp(self, osubdata, osubdata_api, acc=100, score=1000000, mods=0, keys=None):
         #  Thanks Error- for the formula
         stars = float(osubdata_api.star_rating)
         od = float(osubdata.overall_difficulty)
         objectcount = len(osubdata.hit_objects)
+        if int(osubdata.mode) == 0:
+            orig_keys = keycount(osubdata)
+        else:
+            orig_keys = osubdata.circle_size
+
+        # if keys == None:
+        #     keys = orig_keys
+        # if orig_keys < keys:
+        #     score *= 0.9
+        # elif orig_keys > keys:
+        #     diff_keys = orig_keys - keys
+        #     key_mult = [1, 0.86, 0.82, 0.78, 0.74, 0.7, 0.66]
+        #     score *= key_mult[diff_keys]
 
         pfwdw = 64 - 3 * od
         strain1 = math.pow(5 * max(1, stars / 0.0825) - 4, 3) / 110000
