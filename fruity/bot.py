@@ -93,7 +93,8 @@ class ProgramLogic:
         self.repfile = open("reports.log", "a")
         self.UPDATE_MSG = \
             "eyo, its boterino here with an update ([https://aeverr.s-ul.eu/CpdBefOU sic]). " \
-            "[https://discord.gg/2NjBpNa We have a Discord server]. ZeroDivisionError fixed."
+            "[https://discord.gg/2NjBpNa We have a Discord server]. Development has been halted until further notice. "\
+            "I'll be back soon, I promise!"
         self.FIRST_TIME_MSG = \
             "Welcome, and thanks for using my bot! " \
             "Check out [https://github.com/de-odex/FruityBot/wiki the wiki] for commands. " \
@@ -513,10 +514,8 @@ class ProgramLogic:
                             acc, combo, miss = acm_data
                         else:
                             acc, combo, miss = (100, beatmap_data_api.max_combo, 0)
-                        pp_vals = (str(calc.calculatepp(beatmap_data,
-                                                        beatmap_data_api, mode, acc=acc,
-                                                        combo=combo, miss=miss,
-                                                        mods=mods)))
+                        pp_vals = (str(calc.calculatepp(beatmap_data, beatmap_data_api, mode, acc=acc,
+                                                        max_player_combo=combo, miss=miss, mods=mods)),)
                         acccombomiss = str(acc) + "% " + str(combo) + "x " + str(miss) + "miss " + mods_name
                         end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
                                     + "* " + bm_time \
@@ -539,9 +538,8 @@ class ProgramLogic:
                             acc, score = acm_data
                         else:
                             acc, score = (100, 1000000)
-                        pp_vals = (
-                            str(calc.calculatepp(beatmap_data, beatmap_data_api, mode=mode, acc=acc, score=score,
-                                                 mods=mods)),)
+                        pp_vals = (str(calc.calculatepp(beatmap_data, beatmap_data_api, mode=mode, acc=acc, score=score,
+                                                        mods=mods)),)
                         accscore = str(acc) + "% " + str(score) + " " + mods_name
                         end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
                                     + "* " + bm_time \
@@ -629,7 +627,7 @@ class ProgramLogic:
             return "Something's up, or I guess in this case, down, with your combo."
         except requests.exceptions.HTTPError as exc:
             if 500 <= exc.response.status_code <= 599:
-                sendpp(message, name, ident)
+                self.sendpp(message, name, ident)
                 return "If you're seeing this message, that means my bot broke somehow. Error:OsuApi"
             else:
                 print(colorama.Back.RED + colorama.Style.BRIGHT + " ERROR " + colorama.Back.RESET +
@@ -649,7 +647,7 @@ class ProgramLogic:
                    " ^-^ Error:" + exc_type.__name__ + " id:" + str(rdm)
 
     def sendrec(self, message, name):
-        recommend.recommend(self.osu_api_client)
+        return recommend.recommend(self.osu_api_client, message, name)
 
 class Bot(irc.IRCClient):
     """An IRC bot."""
@@ -720,7 +718,7 @@ class Bot(irc.IRCClient):
                 elif command == "h":
                     self.msg(user, "Need help? Check [https://github.com/de-odex/FruityBot/wiki the wiki] for commands.")
                 elif command == "r":
-                    self.logic.sendrec(msg, user)
+                    self.msg(user, self.logic.sendrec(msg, user))
                     pass
                 elif command == "uptime":
                     self.msg(user,

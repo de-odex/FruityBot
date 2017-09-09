@@ -40,17 +40,17 @@ class __CatchTheBeat:
         max_player_combo = int(osubdata.max_combo) if max_player_combo == 0 else max_player_combo
         ar = float(osubdata.approach_rate)
 
-        finalpp = pow(((5 * max(1, stars / 0.0049)) - 4), 2) / 100000
+        finalpp = pow(((5 * max(1.0, stars / 0.0049)) - 4), 2) / 100000
         finalpp *= 0.95 + 0.4 * min(1.0, max_combo / 3000.0) + (
             math.log(max_combo / 3000.0, 10) * 0.5 if max_combo > 3000 else 0.0)
         finalpp *= pow(0.97, miss)
         finalpp *= pow(max_player_combo / max_combo, 0.8)
         if (ar > 9):
             finalpp *= 1 + 0.1 * (ar - 9.0)
-        if (ar < 8):
+        elif (ar < 8):
             finalpp *= 1 + 0.025 * (8.0 - ar)
         else:
-            finalpp *= 1
+            pass
         finalpp *= pow(acc / 100, 5.5)
 
         try:
