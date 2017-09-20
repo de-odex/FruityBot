@@ -153,6 +153,8 @@ class ProgramLogic:
         x = self.sendstore(msg, user, file)
         if x:
             return x
+        else:
+            return
 
     def setpref(self, message, name):
         split_msg = message.split("!set ")[1]
@@ -632,8 +634,11 @@ class ProgramLogic:
             else:
                 print(colorama.Back.RED + colorama.Style.BRIGHT + " ERROR " + colorama.Back.RESET +
                       " internet, " + str(e.response.status_code))
-                sendpp(message, name, ident)
+                self.sendpp(message, name, ident)
                 return "If you're seeing this message, that means my bot broke somehow. Error:FrtSrv"
+        except requests.exceptions.ConnectionError:
+            self.sendpp(message, name, ident)
+            return "If you're seeing this message, that means my bot broke somehow. Error:OsuFileApi"
         except:
             rdm = random.randint(0, 100000)
             exc_type, exc_value, exc_traceback = sys.exc_info()
@@ -689,12 +694,17 @@ class Bot(irc.IRCClient):
         """Called when the bot receives a message."""
         global osu_library
         user = user.split('!', 1)[0]
+        msg = msg.lower()
 
         # Check to see if they're sending me a private message
         if channel == self.nickname:
             if msg.startswith(config.prefix):
-                self.logic.check_update(self.logic.FIRST_TIME_MSG, user, "firsttime.txt")
-                self.logic.check_update(self.logic.UPDATE_MSG, user, "updates.txt")
+                f = self.logic.check_update(self.logic.FIRST_TIME_MSG, user, "firsttime.txt")
+                u = self.logic.check_update(self.logic.UPDATE_MSG, user, "updates.txt")
+                if f:
+                    self.msg(user, f)
+                if u:
+                    self.msg(user, u)
                 command = msg.split(config.prefix, 1)[1].split()[0]
 
                 # ~~~~~~~~~~~~~~~~~~~~~~~~ THE COMMANDS ~~~~~~~~~~~~~~~~~~~~~~~~
@@ -764,9 +774,12 @@ class Bot(irc.IRCClient):
         user = user.split('!', 1)[0]
         self.logic.log(colorama.Fore.MAGENTA + "* " + user + colorama.Fore.WHITE + " " + msg)
         if channel == self.nickname:
-
-            self.logic.check_update(self.logic.FIRST_TIME_MSG, user, "firsttime.txt")
-            self.logic.check_update(self.logic.UPDATE_MSG, user, "updates.txt")
+            f = self.logic.check_update(self.logic.FIRST_TIME_MSG, user, "firsttime.txt")
+            u = self.logic.check_update(self.logic.UPDATE_MSG, user, "updates.txt")
+            if f:
+                self.msg(user, f)
+            if u:
+                self.msg(user, u)
             d = threads.deferToThread(self.logic.sendpp, msg, user, "np")
             d.addCallback(self.logCommand, user)
             d.addErrback(log.err)

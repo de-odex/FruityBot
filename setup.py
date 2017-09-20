@@ -9,7 +9,7 @@ def read():
 
 setup(
     name='FruityBot',
-    version='2.2.1-alpha',
+    version='2.3.2-alpha',
     packages=find_packages(),
     url='https://github.com/de-odex/FruityBot',
     license='MIT',
