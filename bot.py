@@ -84,6 +84,9 @@ class FruityBot(irc.bot.SingleServerIRCBot):
         self.command_funcs = [func for func in dir(utils.Commands) if callable(getattr(utils.Commands, func))
                               and not func.startswith("_")]
 
+    def on_nicknameinuse(self, c, e):
+        c.nick(c.get_nickname() + "_")
+
     def on_welcome(self, c, e):
         logger.info("Bot started")
         c.join(self.channel)
