@@ -42,7 +42,10 @@ class FruityBot(irc.bot.SingleServerIRCBot):
     def __init__(self, channel, port=6667, test=False):
         self.test = test
 
-        self.Config = utils.Config("config.json")
+        try:
+            self.Config = utils.Config("config.json")
+        except FileNotFoundError:
+            self.Config = utils.Config("config.json.template")
 
         self.userdb = sqlite3.connect('userpref.db')
         self.upcur = self.userdb.cursor()
