@@ -41,11 +41,13 @@ logger = logging.getLogger()
 class FruityBot(irc.bot.SingleServerIRCBot):
     def __init__(self, channel, port=6667, test=False):
         self.test = test
+        self.nick_iteration = 0
 
         try:
             self.Config = utils.Config("config.json")
         except FileNotFoundError:
             self.Config = utils.Config("config.json.template")
+        logger.debug(self.Config.config)
 
         self.userdb = sqlite3.connect('userpref.db')
         self.upcur = self.userdb.cursor()
@@ -85,10 +87,12 @@ class FruityBot(irc.bot.SingleServerIRCBot):
                               and not func.startswith("_")]
 
     def on_nicknameinuse(self, c, e):
-        c.nick(c.get_nickname() + "_")
+        self.nick_iteration += 1
+        c.nick(c.get_nickname() + ("_" * self.nick_iteration))
+        logger.debug("Now using " + c.get_nickname() + ("_" * self.nick_iteration))
 
     def on_welcome(self, c, e):
-        logger.info("Bot started")
+        logger.info("Bot started as " + c.get_nickname())
         c.join(self.channel)
         if self.test:
             self.die()
@@ -101,12 +105,9 @@ class FruityBot(irc.bot.SingleServerIRCBot):
         logger.info("* " + e.source.nick + " " + e.arguments[0])
         self.Commands.np(self, c, e)
 
-    # def on_pubmsg(self, c, e):
-    #     a = e.arguments[0].split(":", 1)
-    #     if len(a) > 1 and irc.strings.lower(a[0]) == irc.strings.lower(self.connection.get_nickname()):
-    #         # if () and first part of e.args[0] is the bot's nick
-    #         self.do_command(e, a[1].strip())
-    #     return
+    def on_pubmsg(self, c, e):
+        if e.source.nick == self.Config.config.main.owner:
+            self.do_command(e, e.arguments[0])
 
     def do_command(self, e, cmd):
         c = self.connection
@@ -146,7 +147,7 @@ class FruityBot(irc.bot.SingleServerIRCBot):
                     command_incurred = True
                     func = getattr(utils.Commands, i)
                     func(self.Commands, self, c, e)
-            if not command_incurred:
+            if not command_incurred and cmd[:1] == self.Config.config.main.prefix:
                 c.notice(e.source.nick, "Not understood: " + cmd)
 
 
