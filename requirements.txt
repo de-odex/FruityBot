@@ -1,5 +1,3 @@
 slider
-box
-irc
-irc
+python-box
 irc

@@ -28,6 +28,7 @@ import logging.config
 #mine
 import os
 import importlib
+
 import sqlite3
 import utils
 import pathlib
@@ -38,7 +39,9 @@ logger = logging.getLogger()
 
 
 class FruityBot(irc.bot.SingleServerIRCBot):
-    def __init__(self, channel, port=6667):
+    def __init__(self, channel, port=6667, test=False):
+        self.test = test
+
         self.Config = utils.Config("config.json")
 
         self.userdb = sqlite3.connect('userpref.db')
@@ -81,6 +84,8 @@ class FruityBot(irc.bot.SingleServerIRCBot):
     def on_welcome(self, c, e):
         logger.info("Bot started")
         c.join(self.channel)
+        if self.test:
+            self.die()
 
     def on_privmsg(self, c, e):
         logger.info(e.source.nick + ": " + e.arguments[0])
