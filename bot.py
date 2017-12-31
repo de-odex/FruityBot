@@ -1,24 +1,3 @@
-#!/usr/bin/env python
-#
-# Example program using irc.bot.
-#
-# Joel Rosdahl <joel@rosdahl.net>
-
-"""A simple example bot.
-This is an example bot that uses the SingleServerIRCBot class from
-irc.bot.  The bot enters a channel and listens for commands in
-private messages and channel traffic.  Commands in channel messages
-are given by prefixing the text by the bot name followed by a colon.
-It also responds to DCC CHAT invitations and echos data sent in such
-sessions.
-The known commands are:
-    stats -- Prints some channel information.
-    disconnect -- Disconnect the bot.  The bot will try to reconnect
-                  after 60 seconds.
-    die -- Let the bot cease to exist.
-    dcc -- Let the bot invite you to a DCC CHAT connection.
-"""
-
 import irc.bot
 import irc.strings
 from irc.client import ip_numstr_to_quad, ip_quad_to_numstr
@@ -29,6 +8,7 @@ import logging.config
 import os
 import importlib
 
+import time
 import sqlite3
 import utils
 import pathlib
@@ -43,11 +23,12 @@ class FruityBot(irc.bot.SingleServerIRCBot):
         self.test = test
         self.nick_iteration = 0
 
+        self.connection.set_rate_limit(1)
+
         try:
             self.Config = utils.Config("config.json")
         except FileNotFoundError:
             self.Config = utils.Config("config.json.template")
-        logger.debug(self.Config.config)
 
         self.userdb = sqlite3.connect('userpref.db')
         self.upcur = self.userdb.cursor()
@@ -82,6 +63,8 @@ class FruityBot(irc.bot.SingleServerIRCBot):
             self.osu_library = slider.library.Library(self.libdir)
         self.osu_api_client = slider.client.Client(self.osu_library, self.Config.config.osu.api)
 
+        self.start_time = time.time()
+
         self.Commands = utils.Commands(self.Config)
         self.command_funcs = [func for func in dir(utils.Commands) if callable(getattr(utils.Commands, func))
                               and not func.startswith("_")]
@@ -115,14 +98,14 @@ class FruityBot(irc.bot.SingleServerIRCBot):
         # check if user in database
         in_db = utils.Utils.check_user_in_db(e.source.nick, 'userpref.db', "ftm")
         if not in_db:
-            c.notice(e.source.nick, self.FIRST_TIME_MSG)
+            c.privmsg(e.source.nick, self.FIRST_TIME_MSG)
         in_db = utils.Utils.check_user_in_db(e.source.nick, 'userpref.db', "um")
         if not in_db:
-            c.notice(e.source.nick, self.UPDATE_MSG)
+            c.privmsg(e.source.nick, self.UPDATE_MSG)
 
         if cmd == self.Config.config.main.prefix + "reload":
             if e.source.nick == self.Config.config.main.owner:
-                c.notice(e.source.nick, "Attempting a reload...")
+                c.privmsg(e.source.nick, "Attempting a reload...")
                 try:
                     importlib.reload(utils)
                     self.Config = utils.Config("config.json")
@@ -133,28 +116,31 @@ class FruityBot(irc.bot.SingleServerIRCBot):
                                           and not func.startswith("_")]
                     self.osu_library = slider.library.Library.create_db(self.libdir)
                     self.osu_api_client = slider.client.Client(self.osu_library, self.Config.config.osu.api)
-                    c.notice(e.source.nick, "Reload successful!")
+                    c.privmsg(e.source.nick, "Reload successful!")
                 except:
                     logger.exception("Reload Exception")
-                    c.notice(e.source.nick, "Reload failed! Killing bot due to possible errors.")
+                    c.privmsg(e.source.nick, "Reload failed! Killing bot due to possible errors.")
                     self.die()
             else:
-                c.notice(e.source.nick, "You do not have the permissions to run this command!")
+                c.privmsg(e.source.nick, "You do not have the permissions to run this command!")
         else:
             command_incurred = False
             for i in self.command_funcs:
-                if cmd.split()[0] == self.Config.config.main.prefix+i or cmd.split()[0] == self.Config.config.main.prefix+i[4:] and i[:4] == "cmd_":
+                if cmd.split()[0] == self.Config.config.main.prefix+i and i[:4] != "cmd_" or \
+                   cmd.split()[0] == self.Config.config.main.prefix+i[4:] and i[:4] == "cmd_":
                     command_incurred = True
                     func = getattr(utils.Commands, i)
                     func(self.Commands, self, c, e)
             if not command_incurred and cmd[:1] == self.Config.config.main.prefix:
-                c.notice(e.source.nick, "Not understood: " + cmd)
+                c.privmsg(e.source.nick, "Invalid command. " + self.Config.config.main.prefix + "h for help.")
 
 
 def main():
-    channel = "#bottest"
+    logger.debug("Start of __main__")
 
+    channel = "#bottest"
     bot = FruityBot(channel)
+    logger.debug("Bot instantiated")
     bot.start()
 
 

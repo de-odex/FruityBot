@@ -26,12 +26,12 @@ def is_owner():
             if e.source.nick == self.Config.config.main.owner:
                 f(*args, **kwargs)
             else:
-                c.notice(e.source.nick, "You do not have the permissions to run this command!")
+                c.privmsg(e.source.nick, "You do not have the permissions to run this command!")
         return wrapper
     return is_owner_deco
 
 
-def command(remove_cmd=False, aliases=None):
+def command(remove_cmd=False):
     def command_deco(f):
         wraps(f)
 
@@ -45,10 +45,10 @@ def command(remove_cmd=False, aliases=None):
                 else:
                     f(*args, **kwargs)
             except IndexError as exc:
-                c.notice(e.source.nick, "No arguments were passed.")
+                c.privmsg(e.source.nick, "No arguments were passed.")
                 logger.exception("Argument Exception")
             except Exception as exc:
-                c.notice(e.source.nick, "A general error has occurred. Error: " + type(exc).__name__)
+                c.privmsg(e.source.nick, "A general error has occurred. Error: " + type(exc).__name__)
                 logger.exception("General Exception")
         return wrapper
     return command_deco
@@ -122,8 +122,10 @@ class Utils:
                 sent.append("Please set a mode with !set mode [catch|mania|taiko]")
                 return -1, sent
             else:
-                upcur.execute("SELECT mode FROM userdb WHERE user=?", (name,))
                 mode = modedb[1]
+                if mode is None:
+                    sent.append("Please set a mode with !set mode [catch|mania|taiko]")
+                    return -1, sent
                 userdb.commit()
                 return mode, sent
 
@@ -157,7 +159,8 @@ class Commands:
     @is_owner()
     @command()
     def test(self, bot, c, e):
-        c.notice(e.source.nick, str(bot.users[e.source.nick].__dict__))
+        c.privmsg(e.source.nick, str(bot.users[e.source.nick].__dict__))
+        logger.debug(str(bot.users[e.source.nick].last_beatmap[1].__dict__))
 
     @is_owner()
     @command()
@@ -184,11 +187,25 @@ class Commands:
         upcur.execute("DROP TABLE userdb")
         upcur.execute("ALTER TABLE userdbsorted RENAME TO userdb")
         userdb.commit()
-        c.notice(e.source.nick, "Sorted database.")
+        c.privmsg(e.source.nick, "Sorted database.")
+
+    @command()
+    def help(self, bot, c, e):
+        c.privmsg(e.source.nick, "Need help? Check [https://github.com/de-odex/FruityBot/wiki the wiki] "
+                                 "for commands.")
+
+    h = help
+
+    @command()
+    def uptime(self, bot, c, e):
+        c.privmsg(e.source.nick, time.strftime("%H;%M;%S", time.gmtime(time.time() - bot.start_time)) + " since start.")
+
+    @command()
+    def time(self, bot, c, e):
+        c.privmsg(e.source.nick, "Local time: " + time.strftime("%B %d %H:%M:%S", time.localtime(time.time())))
 
     @command(remove_cmd=True)
-    def setpref(self, bot, c, e):
-        logger.debug(e.arguments[0])
+    def set(self, bot, c, e):
         split_msg2 = e.arguments[0].split()
 
         if split_msg2[0] == "mode":
@@ -199,21 +216,23 @@ class Commands:
             elif split_msg2[1].lower() in ["taiko", "t", "1"]:
                 mode = 1
             elif split_msg2[1].lower() in ["standard", "std", "osu", "o", "0"]:
-                c.notice(e.source.nick, "Please message Tillerino for standard pp predictions!")
+                c.privmsg(e.source.nick, "Please message Tillerino for standard pp predictions!")
                 return
             else:
-                c.notice(e.source.nick, "Invalid command")
+                c.privmsg(e.source.nick, "Invalid command")
                 return
             Utils.set_pref(e.source.nick, 'userpref.db', mode)
-            c.notice(e.source.nick, "Set <" + split_msg2[0] + "> to <" + split_msg2[1] + ">")
+            c.privmsg(e.source.nick, "Set <" + split_msg2[0] + "> to <" + split_msg2[1] + ">")
         else:
-            return c.notice(e.source.nick, "Invalid command")
+            return c.privmsg(e.source.nick, "Invalid command")
 
     # Osu! ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
     @command()
     def recommend(self, bot, c, e):
-        c.notice(e.source.nick, "Still under construction...")
+        c.privmsg(e.source.nick, "Still under construction...")
+
+    cmd_r = recommend
 
     @command()
     def np(self, bot, c, e):
@@ -226,7 +245,7 @@ class Commands:
                 bot.users[e.source.nick] = user
                 user.np(c, e)
         else:
-            c.notice(e.source.nick, "Please use \"/np\"!")
+            c.privmsg(e.source.nick, "Please use \"/np\"!")
 
     @command()
     def cmd_with(self, bot, c, e):
@@ -234,7 +253,7 @@ class Commands:
             user = bot.users[e.source.nick]
             user.acm_mod(c, e)
         else:
-            return c.notice(e.source.nick, "You haven't /np'd me anything yet!")
+            return c.privmsg(e.source.nick, "You haven't /np'd me anything yet!")
 
 
 class Osu:
@@ -262,7 +281,7 @@ class Osu:
     @staticmethod
     def send(c, e, sent):
         for i in list(sent):
-            c.notice(e.source.nick, i)
+            c.privmsg(e.source.nick, i)
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -278,7 +297,7 @@ class Osu:
             sent.append("This is a beatmapset, not a beatmap")
             return Osu.send(c, e, sent)
         beatmap_id = beatmap_id[2].split("&")[0]
-
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         beatmap_data = self.bot.osu_library.lookup_by_id(beatmap_id, download=True, save=True)
         beatmap_data_api = self.bot.osu_api_client.beatmap(beatmap_id=beatmap_id, include_converted_beatmaps=True)
         if not beatmap_data_api:
@@ -286,6 +305,9 @@ class Osu:
 
         mode, send_queue = Utils.check_mode_in_db(e.source.nick, 'userpref.db', beatmap_data, np=True)
         Osu.send(c, e, send_queue)
+
+        if mode == -1:
+            return
 
         beatmap_data_api = self.bot.osu_api_client.beatmap(beatmap_id=int(beatmap_id),
                                                            include_converted_beatmaps=True,
@@ -346,7 +368,7 @@ class Osu:
         sent = []
         mods_name = ""
 
-        beatmap_data, beatmap_data_api, mode_api, beatmap_id = beatmap_data_s[name]
+        beatmap_data, beatmap_data_api, mode_api, beatmap_id = self.last_beatmap
 
         mode, send_queue = Utils.check_mode_in_db(e.source.nick, 'userpref.db', beatmap_data)
         Osu.send(c, e, send_queue)
@@ -511,7 +533,6 @@ class Osu:
                             + pp_vals[0] + "pp" \
                             + " | " + end_props)
 
-
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
     @staticmethod
@@ -533,8 +554,8 @@ class Osu:
             ar = float(osubdata.approach_rate)
 
             finalpp = pow(((5 * max(1.0, stars / 0.0049)) - 4), 2) / 100000
-            finalpp *= 0.95 + 0.4 * min(1.0, max_combo / 3000.0) + (
-                math.log(max_combo / 3000.0, 10) * 0.5 if max_combo > 3000 else 0.0)
+            finalpp *= 0.95 + 0.4 * min(1.0, max_combo / 3000.0) + \
+                       (math.log(max_combo / 3000.0, 10) * 0.5 if max_combo > 3000 else 0.0)
             finalpp *= pow(0.97, miss)
             finalpp *= pow(player_combo / max_combo, 0.8)
             if ar > 9:
