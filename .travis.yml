@@ -1,8 +1,8 @@
 language: python
 python:
   - "3.6"
-# command to install dependencies
+  - "nightly"
 install:
-  - pip install .
-# command to run tests
-script: python -m pytest fruity/
+  - pip install -r requirements.txt
+script:
+  - pytest -s

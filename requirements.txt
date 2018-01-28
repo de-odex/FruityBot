@@ -1,0 +1,3 @@
+slider
+python-box
+irc

@@ -389,9 +389,9 @@ paket-files/
 
 # Project Specific
 osulib/
-config.py
+config.json
 *.db
-*.txt
+*.log
 *.sln
 *.pyperf
 *.pyproj

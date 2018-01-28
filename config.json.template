@@ -1,0 +1,14 @@
+{
+	"main": {
+		"nick": "FruityBot",
+		"server": "irc.freenode.net",
+		"owner": "aEverr",
+		"prefix": "!",
+		"first_time_msg": "",
+		"update_msg": ""
+	},
+	"osu": {
+		"api": "",
+		"irc": ""
+	}
+}
