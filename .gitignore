@@ -389,6 +389,7 @@ paket-files/
 
 # Project Specific
 osulib/
+_Extra Utils/
 config.json
 debug.json
 *.db
