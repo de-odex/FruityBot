@@ -371,7 +371,7 @@ class Osu:
 
         beatmap_data_api = self.cmd.osu_api_client.beatmap(beatmap_id=int(beatmap_id),
                                                                include_converted_beatmaps=True,
-                                                               game_mode=slider.game_mode.GameMode(mode))
+                                                               game_mode=slider.GameMode(mode))
 
         if beatmap_data_api.max_combo is None and mode is not 3:
             beatmap_data_api = self.cmd.osu_api_client.beatmap(beatmap_id=int(beatmap_id),
@@ -417,7 +417,7 @@ class Osu:
             end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
                         + "* " + bm_time \
                         + " OD" + str(beatmap_data.overall_difficulty) \
-                        + " MAX" + str(beatmap_data_api.max_combo)
+                        + " MAX" + str(beatmap_data.max_combo)
             bot.msg(e.source.nick, artist_name
                     + " | osu!taiko"
                     + " | SS: " + pp_values[0] + "pp"
@@ -437,10 +437,10 @@ class Osu:
 
         if mode_api != mode:
             beatmap_data_api = self.cmd.osu_api_client.beatmap(beatmap_id=beatmap_id,
-                                                                   include_converted_beatmaps=True,
-                                                                   game_mode=slider.game_mode.GameMode(mode))
+                                                               include_converted_beatmaps=True,
+                                                               game_mode=slider.game_mode.GameMode(mode))
 
-        max_combo = int(beatmap_data_api.max_combo) if beatmap_data_api.max_combo is not None else "err"
+        max_combo = int(beatmap_data_api.max_combo) if beatmap_data_api.max_combo else int(beatmap_data.max_combo)
         artist_name = beatmap_data.artist + " - " + beatmap_data.title + " [" + beatmap_data.version + "]"
         bm_time = Utils.strfdelta(datetime.timedelta(seconds=int(beatmap_data_api.hit_length.seconds),
                                                      milliseconds=beatmap_data_api.hit_length.seconds -
@@ -456,7 +456,7 @@ class Osu:
                 mods = osu_user.last_mod
 
             # reads args of message
-            acc = combo = miss = score = None
+            acc = combo = miss = score = 0
             for i in split_msg:
                 if Utils.isfloat(i) or i.endswith(("%",)):
                     acc = float(i.replace("%", ""))
@@ -659,9 +659,9 @@ class Osu:
                                                   mods=mods)),)
                 acc_miss = str(acc) + "% " + str(miss) + "miss " + mods_name
                 end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
-                            + "* " + bm_time \
-                            + " OD" + str(beatmap_data.overall_difficulty) \
-                            + " MAX" + str(beatmap_data_api.max_combo)
+                    + "* " + bm_time \
+                    + " OD" + str(beatmap_data.overall_difficulty) \
+                    + " MAX" + str(beatmap_data_api.max_combo)
                 return bot.msg(e.source.nick, artist_name
                                + " | osu!taiko"
                                + " | " + acc_miss + ": "
