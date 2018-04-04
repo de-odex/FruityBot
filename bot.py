@@ -17,24 +17,20 @@ logger = logging.getLogger(__name__)
 
 
 class FruityBot(irc.IRCClient):
-    try:
-        nickname = utils.Config("config.json").config.main.nick
-        password = utils.Config("config.json").config.osu.irc
-    except FileNotFoundError:
-        nickname = utils.Config("config.json.template").config.main.nick
-        password = utils.Config("config.json.template").config.osu.irc
     lineRate = 1
     heartbeatInterval = 64
 
-    def __init__(self, first_time, users, channel=None, test=False):
-        logger.debug("Trying nickname " + self.nickname)
-        self.test = test
-        self.channel = channel
-
+    def reload_init(self, first_time, users):
         try:
-            self.Config = utils.Config("config.json")
+            try:
+                self.Config = utils.Config("debug.json")
+            except FileNotFoundError:
+                self.Config = utils.Config("config.json")
         except FileNotFoundError:
             self.Config = utils.Config("config.json.template")
+
+        self.nickname = self.Config.config.main.nick
+        self.password = self.Config.config.osu.irc if self.Config.config.osu.irc else None
 
         self.UPDATE_MSG = self.Config.config.main.update_msg
         self.FIRST_TIME_MSG = self.Config.config.main.first_time_msg
@@ -48,11 +44,42 @@ class FruityBot(irc.IRCClient):
         self.command_funcs = [func for func in dir(utils.Commands) if callable(getattr(utils.Commands, func))
                               and not func.startswith("_")]
 
+    def __init__(self, first_time, users, channel=None, test=False):
+        self.test = test
+        self.channel = channel
+
+        try:
+            try:
+                self.Config = utils.Config("debug.json")
+            except FileNotFoundError:
+                self.Config = utils.Config("config.json")
+        except FileNotFoundError:
+            self.Config = utils.Config("config.json.template")
+
+        self.nickname = self.Config.config.main.nick
+        self.password = self.Config.config.osu.irc if self.Config.config.osu.irc else None
+
+        self.UPDATE_MSG = self.Config.config.main.update_msg
+        self.FIRST_TIME_MSG = self.Config.config.main.first_time_msg
+
+        self.user_pref = utils.Utils.create_db("./userpref.db", "userpref")
+        self.start_time = first_time
+
+        self.users = users
+
+        self.Commands = utils.Commands(self, self.Config)
+        self.command_funcs = [func for func in dir(utils.Commands) if callable(getattr(utils.Commands, func))
+                              and not func.startswith("_")]
+
+        logger.debug("Trying nickname " + self.nickname)
+        logger.debug("On server " + self.Config.config.main.server)
+        logger.debug("Using password " + (self.password if self.password is not None else "\"None\""))
+
     def irc_ERR_NICKNAMEINUSE(self, prefix, params):
         logger.warning("Nick error! Someone of " + self.nickname + " nickname already exists")
         self.nickname = self.nickname + "_"
         self.setNick(self.nickname)
-        logger.debug("Now using " + self.nickname)
+        logger.info("Now using " + self.nickname)
 
     def signedOn(self):
         logger.info("Bot started as " + self.nickname + " at " + self.Config.config.main.server)
@@ -103,18 +130,13 @@ class FruityBot(irc.IRCClient):
                 self.msg(e.source.nick, "Attempting a reload...")
                 try:
                     importlib.reload(utils)
-                    self.user_pref = utils.Utils.create_db("./userpref.db", "userpref")
-                    self.Config = utils.Config("config.json")
-                    self.Commands = utils.Commands(self, self.Config)
-                    self.UPDATE_MSG = self.Config.config.main.update_msg
-                    self.FIRST_TIME_MSG = self.Config.config.main.first_time_msg
-                    self.command_funcs = [func for func in dir(utils.Commands) if callable(
-                        getattr(utils.Commands, func)) and not func.startswith("_")]
+                    self.reload_init(self.start_time, self.users)
                     self.msg(e.source.nick, "Reload successful!")
                 except:
                     logger.exception("Reload Exception")
                     self.msg(e.source.nick, "Reload failed! Killing bot due to possible errors.")
                     self.quit()
+                    reactor.callFromThread(reactor.stop)
         else:
             for i in self.command_funcs:
                 if (cmd.split()[0] == i and i[:4] != "cmd_") or (cmd.split()[0] == i[4:] and i[:4] == "cmd_"):
@@ -174,7 +196,10 @@ def main():
 
     # connect factory to this host and port
     try:
-        reactor.connectTCP(utils.Config("config.json").config.main.server, 6667, f)
+        try:
+            reactor.connectTCP(utils.Config("debug.json").config.main.server, 6667, f)
+        except FileNotFoundError:
+            reactor.connectTCP(utils.Config("config.json").config.main.server, 6667, f)
     except FileNotFoundError:
         reactor.connectTCP(utils.Config("config.json.template").config.main.server, 6667, f)
 

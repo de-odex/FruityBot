@@ -390,6 +390,7 @@ paket-files/
 # Project Specific
 osulib/
 config.json
+debug.json
 *.db
 *.log
 *.sln
