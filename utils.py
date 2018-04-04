@@ -1,6 +1,7 @@
 import json
 import logging.config
 import math
+import operator
 import os
 import pathlib
 import re
@@ -9,13 +10,15 @@ import datetime
 import urllib.parse
 import zlib
 from functools import wraps
+from itertools import islice
 from string import Formatter
+from collections import defaultdict, Counter, OrderedDict
 
 import box
 import dill
 import slider
 import sqlitedict
-from twisted.internet import reactor
+from twisted.internet import reactor, threads, defer
 
 logger = logging.getLogger(__name__)
 URL_REGEX = r"""(?i)\b((?:https?:(?:/{1,3}|[a-z0-9%])|[a-z0-9.\-]+[.](?:com|net|org|edu|gov|mil|aero|asia|biz|cat|coop|info|int|jobs|mobi|museum|name|post|pro|tel|travel|xxx|ac|ad|ae|af|ag|ai|al|am|an|ao|aq|ar|as|at|au|aw|ax|az|ba|bb|bd|be|bf|bg|bh|bi|bj|bm|bn|bo|br|bs|bt|bv|bw|by|bz|ca|cc|cd|cf|cg|ch|ci|ck|cl|cm|cn|co|cr|cs|cu|cv|cx|cy|cz|dd|de|dj|dk|dm|do|dz|ec|ee|eg|eh|er|es|et|eu|fi|fj|fk|fm|fo|fr|ga|gb|gd|ge|gf|gg|gh|gi|gl|gm|gn|gp|gq|gr|gs|gt|gu|gw|gy|hk|hm|hn|hr|ht|hu|id|ie|il|im|in|io|iq|ir|is|it|je|jm|jo|jp|ke|kg|kh|ki|km|kn|kp|kr|kw|ky|kz|la|lb|lc|li|lk|lr|ls|lt|lu|lv|ly|ma|mc|md|me|mg|mh|mk|ml|mm|mn|mo|mp|mq|mr|ms|mt|mu|mv|mw|mx|my|mz|na|nc|ne|nf|ng|ni|nl|no|np|nr|nu|nz|om|pa|pe|pf|pg|ph|pk|pl|pm|pn|pr|ps|pt|pw|py|qa|re|ro|rs|ru|rw|sa|sb|sc|sd|se|sg|sh|si|sj|Ja|sk|sl|sm|sn|so|sr|ss|st|su|sv|sx|sy|sz|tc|td|tf|tg|th|tj|tk|tl|tm|tn|to|tp|tr|tt|tv|tw|tz|ua|ug|uk|us|uy|uz|va|vc|ve|vg|vi|vn|vu|wf|ws|ye|yt|yu|za|zm|zw)/)(?:[^\s()<>{}\[\]]+|\([^\s()]*?\([^\s()]+\)[^\s()]*?\)|\([^\s]+?\))+(?:\([^\s()]*?\([^\s()]+\)[^\s()]*?\)|\([^\s]+?\)|[^\s`!()\[\]{};:'".,<>?«»“”‘’])|(?:(?<!@)[a-z0-9]+(?:[.\-][a-z0-9]+)*[.](?:com|net|org|edu|gov|mil|aero|asia|biz|cat|coop|info|int|jobs|mobi|museum|name|post|pro|tel|travel|xxx|ac|ad|ae|af|ag|ai|al|am|an|ao|aq|ar|as|at|au|aw|ax|az|ba|bb|bd|be|bf|bg|bh|bi|bj|bm|bn|bo|br|bs|bt|bv|bw|by|bz|ca|cc|cd|cf|cg|ch|ci|ck|cl|cm|cn|co|cr|cs|cu|cv|cx|cy|cz|dd|de|dj|dk|dm|do|dz|ec|ee|eg|eh|er|es|et|eu|fi|fj|fk|fm|fo|fr|ga|gb|gd|ge|gf|gg|gh|gi|gl|gm|gn|gp|gq|gr|gs|gt|gu|gw|gy|hk|hm|hn|hr|ht|hu|id|ie|il|im|in|io|iq|ir|is|it|je|jm|jo|jp|ke|kg|kh|ki|km|kn|kp|kr|kw|ky|kz|la|lb|lc|li|lk|lr|ls|lt|lu|lv|ly|ma|mc|md|me|mg|mh|mk|ml|mm|mn|mo|mp|mq|mr|ms|mt|mu|mv|mw|mx|my|mz|na|nc|ne|nf|ng|ni|nl|no|np|nr|nu|nz|om|pa|pe|pf|pg|ph|pk|pl|pm|pn|pr|ps|pt|pw|py|qa|re|ro|rs|ru|rw|sa|sb|sc|sd|se|sg|sh|si|sj|Ja|sk|sl|sm|sn|so|sr|ss|st|su|sv|sx|sy|sz|tc|td|tf|tg|th|tj|tk|tl|tm|tn|to|tp|tr|tt|tv|tw|tz|ua|ug|uk|us|uy|uz|va|vc|ve|vg|vi|vn|vu|wf|ws|ye|yt|yu|za|zm|zw)\b/?(?!@)))"""
@@ -207,7 +210,7 @@ class Commands:
     @is_owner()
     @command()
     def test(self, bot, e):
-        bot.msg(e.source.nick, str(bot.users[e.source.nick]))
+        bot.msg(e.source.nick, str(((bot.users[e.source.nick].recommendations))))
 
     @is_owner()
     @command()
@@ -279,6 +282,7 @@ class Commands:
     @command()
     def recommend(self, bot, e):
         bot.msg(e.source.nick, "Still under construction...")
+        bot.msg(e.source.nick, "Showing debug values")
         user = bot.users.setdefault(e.source.nick, OsuUser(e.source.nick, bot.user_pref))
         self.osu_non_std_library.recommend(user, bot, e)
 
@@ -321,6 +325,7 @@ class OsuUser:
         self.last_mod = False
         self.last_kwargs = False
         self.top_plays = [-1, False, False, False]  # per mode, will be arrays
+        self.recommendations = False
 
 
 class Osu:
@@ -674,15 +679,79 @@ class Osu:
     def recommend(self, osu_user, bot, e):
         # https://github.com/Tyrrrz/OsuHelper/blob/master/OsuHelper/Services/RecommendationService.cs#L34
 
-        osu_user.user_client = self.cmd.osu_api_client.user(user_name=e.source.nick, game_mode=osu_user.preferences[e.source.nick].mode)
+        def iterate_maps_callback(y):
+            _temp_list.extend(y)
+            finish_deferred.append(0)
+            if len(finish_deferred) % 5 == 0:
+                logger.debug(f"finished: {len(finish_deferred)} / {len(top_plays)}")
+                bot.msg(e.source.nick, f"finished: {len(finish_deferred)} / {len(top_plays)}")
+            if len(finish_deferred) == len(top_plays):
+                _temp.update(_temp_list)
+                osu_user.recommendations = recommendations = OrderedDict(islice(OrderedDict(sorted(_temp.items(), key=operator.itemgetter(1), reverse=True)).items(), 200))
+                print(recommendations)
+                bot.msg(e.source.nick, "done")
+
+        def get_rec_from_map(i):
+            client = cmd.osu_api_client.copy()
+            beatmap = client.beatmap(beatmap_id=i.beatmap_id)
+            start_deferred.append(0)
+            if len(start_deferred) % 5 == 0:
+                logger.debug(f"started: {len(start_deferred)} / {len(top_plays)}")
+                bot.msg(e.source.nick, f"started: {len(start_deferred)} / {len(top_plays)}")
+            logger.debug(f"{beatmap.title} [{beatmap.version}] id: {beatmap.beatmap_id}")
+            # map top plays
+            high_scores = sorted(client.beatmap_best(beatmap_id=i.beatmap_id, game_mode=game_mode),
+                                 key=lambda x: abs(x.pp - i.pp))[:20]
+            # through map top plays
+            total_scores = []
+            for j in high_scores:
+                user_high_scores = sorted(
+                    [k for k in client.user_best(user_id=j.user_id, game_mode=game_mode)
+                     if (k.rank == "S" or k.rank == "X" or k.rank == "SH" or k.rank == "XH") and
+                     (pp_limit_lower <= k.pp <= pp_limit_upper)],
+                    key=lambda x: abs(x.pp - i.pp))[:20]
+                total_scores.extend([k.beatmap_id for k in user_high_scores])
+            return total_scores
+
+        def iterate_map():
+            # through own top plays
+            for i in top_plays:
+
+                # single thread
+                # iterate_maps_callback(get_rec_from_map(i))
+
+                # multi-thread
+                d = threads.deferToThread(get_rec_from_map, i)
+                d.addCallback(iterate_maps_callback)
+
+        if osu_user.recommendations:
+            pass
+
+        # progress tracker (I was lazy, OK?)
+        start_deferred = []
+        finish_deferred = []
+
+        _temp_list = []
+        _temp = Counter()
+
+        cmd = self.cmd
+        game_mode = slider.GameMode(osu_user.preferences[e.source.nick].mode)
+        osu_user.user_client = cmd.osu_api_client.user(user_name=e.source.nick, game_mode=game_mode)
+
         top_plays = osu_user.user_client.high_scores(limit=30)
         osu_user.top_plays[osu_user.preferences[e.source.nick].mode] = top_plays
-        top_plays_beatmap_ids = [i.beatmap_id for i in top_plays]
         assert len(top_plays) > 0
+
         pp_list = [i.pp for i in top_plays]
         pp_limit_lower = sum(pp_list) / float(len(pp_list))
         pp_limit_upper = pp_limit_lower*1.25
-        bot.msg(e.source.nick, str(pp_limit_upper) + " to " + str(pp_limit_lower))
+        bot.msg(e.source.nick, "{:.2f}pp to {:.2f}pp".format(pp_limit_upper, pp_limit_lower))
+
+        try:
+            iterate_map()
+        except:
+            logger.exception("Rec Exception")
+            bot.msg(e.source.nick, "RecommendError: Unknown")
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
