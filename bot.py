@@ -138,20 +138,23 @@ class FruityBot(irc.IRCClient):
                     self.quit()
                     reactor.callFromThread(reactor.stop)
         else:
-            for i in self.command_funcs:
-                if (cmd.split()[0] == i and i[:4] != "cmd_") or (cmd.split()[0] == i[4:] and i[:4] == "cmd_"):
-                    logger.debug("Command incurred: " + cmd)
-                    # check if user in database
-                    in_db = utils.Utils.check_user_in_db(e.source, self, "ftm")
-                    if not in_db:
-                        self.msg(e.source.nick, self.FIRST_TIME_MSG)
-                    in_db = utils.Utils.check_user_in_db(e.source, self, "um")
-                    if not in_db:
-                        self.msg(e.source.nick, self.UPDATE_MSG)
+            if cmd.split()[0] in self.command_funcs or \
+                    any((cmd.split()[0] in s and s[:4] == "cmd_") for s in self.command_funcs):
+                logger.debug("Command incurred: " + cmd)
+                # check if user in database
+                in_f_db = utils.Utils.check_user_in_db(e.source, self, "ftm")
+                if not in_f_db:
+                    self.msg(e.source.nick, self.FIRST_TIME_MSG)
+                in_u_db = utils.Utils.check_user_in_db(e.source, self, "um")
+                if not in_u_db:
+                    self.msg(e.source.nick, self.UPDATE_MSG)
 
-                    func = getattr(utils.Commands, i)
-                    func(self.Commands, self, e)
-                    break
+                i = cmd.split()[0]
+                if any((cmd.split()[0] in s and s[:4] == "cmd_") for s in self.command_funcs):
+                    i = "cmd_" + i
+
+                func = getattr(utils.Commands, i)
+                func(self.Commands, self, e)
             else:
                 self.msg(e.source.nick, "Invalid command: " + cmd + ". " +
                          self.Config.config.main.prefix + "h for help.")
