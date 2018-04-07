@@ -1,3 +1,5 @@
+twisted
+dill
+sqlitedict
 slider
-python-box
 irc
