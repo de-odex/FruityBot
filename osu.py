@@ -1,6 +1,7 @@
 import datetime
 import logging
 import math
+import numpy
 import operator
 import re
 import urllib.parse
@@ -8,7 +9,7 @@ from collections import OrderedDict, Counter, namedtuple
 from itertools import islice
 
 import slider
-from twisted.internet import threads
+from twisted.internet import threads, reactor
 from twisted.python import threadpool
 
 import utils
@@ -17,7 +18,6 @@ logger = logging.getLogger(__name__)
 
 Recommendation = namedtuple("Recommendation", "rec_list i last_refresh")
 
-rec_thread_pool = threadpool.ThreadPool(name="recommendations")
 
 class OsuUser:
     def __init__(self, user_id, preferences):
@@ -58,8 +58,8 @@ class Osu:
         osu_user.last_kwargs = False
 
         link_str = re.findall(
-            utils.URL_REGEX,
-            e.arguments[0])
+                utils.URL_REGEX,
+                e.arguments[0])
         link = urllib.parse.urlparse(link_str[0])
         if link.path.split("/")[1] == "b":
             beatmap_id = link.path.split("/")[2].split("&")[0]
@@ -69,8 +69,16 @@ class Osu:
             return bot.msg(e.source.nick, "This is a beatmap set, not a beatmap")
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-        estimate_strs = ((), ("SS", "99% FC", "98% FC"), ("SS", "99.5% FC", "99% FC", "98.5% FC"), ("SS", "99% 970k", "97% 900k"))
-        pp_args = ((), (100, 99, 98), (100, 99.5, 99, 98.5), ((100, 1000000), (99, 970000), (97, 900000)))
+        estimate_strs = ((),
+                         ("SS", "99% FC", "98% FC"),
+                         ("SS", "99.5% FC", "99% FC", "98.5% FC"),
+                         ("SS", "99% 970k", "97% 900k"))
+
+        # index is mode first then iterated through
+        pp_args = ((),
+                   tuple({"acc": i} for i in range(100, 97, -1)),
+                   tuple({"acc": i} for i in numpy.arange(100, 98, -0.5)),
+                   ({"acc": 100, "score": 1000000}, {"acc": 99, "score": 9700000}, {"acc": 97, "score": 900000}))
 
         beatmap_data, beatmap_data_api, mode = self.get_data(e, beatmap_id)
 
@@ -80,6 +88,8 @@ class Osu:
         return True
 
     def acm_mod(self, osu_user, bot, e):
+
+        # region acm_header
         split_msg = e.arguments[0].split()
 
         mods_name = ""
@@ -94,15 +104,11 @@ class Osu:
                                                                game_mode=slider.game_mode.GameMode(mode))
 
         max_combo = int(beatmap_data_api.max_combo) if beatmap_data_api.max_combo else int(beatmap_data.max_combo)
-        artist_name = beatmap_data.artist + " - " + beatmap_data.title + " [" + beatmap_data.version + "]"
+        # endregion
 
-        bm_time = utils.Utils.strfdelta(datetime.timedelta(seconds=int(beatmap_data_api.hit_length.seconds),
-                                                           milliseconds=beatmap_data_api.hit_length.seconds -
-                                                                        int(beatmap_data_api.hit_length.seconds)),
-                                        "{M:02}:{S:02}")
-        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         if split_msg[0] == "acc":
 
+            # region acc_header
             # checks for former mod data if any
             if not osu_user.last_mod:
                 mods = 0
@@ -133,8 +139,28 @@ class Osu:
                 mods_name += "FL"
             if mods == 0:
                 mods_name = "NoMod"
+            # endregion
 
-            if mode == 2:
+            if mode == 1:
+                try:
+                    miss = int(miss)
+                    if miss < max_combo or miss >= 0:
+                        miss = miss
+                    else:
+                        raise SyntaxError
+                except:
+                    return bot.msg(e.source.nick, "You MISSed something there")
+                try:
+                    acc = float(acc)
+                    if 0 <= acc <= 100:
+                        acc = acc
+                    else:
+                        raise SyntaxError
+                except:
+                    return bot.msg(e.source.nick, "Check your accuracy again, please")
+
+                osu_user.last_kwargs = [acc, miss]
+            elif mode == 2:
                 if not combo:
                     combo = int(beatmap_data_api.max_combo)
                 if not miss:
@@ -157,20 +183,6 @@ class Osu:
                     return bot.msg(e.source.nick, "Check your accuracy again, please")
 
                 osu_user.last_kwargs = [acc, combo, miss]
-                pp_values = (str(Osu.calculate_pp(beatmap_data,
-                                                  beatmap_data_api, mode, acc=acc,
-                                                  player_combo=combo, miss=miss,
-                                                  mods=mods)),)
-                acc_combo_miss = str(acc) + "% " + str(combo) + "x " + str(miss) + "miss " + mods_name
-                end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
-                            + "* " + bm_time \
-                            + " AR" + str(beatmap_data.approach_rate) \
-                            + " MAX" + str(beatmap_data_api.max_combo)
-                bot.msg(e.source.nick, artist_name
-                        + " | osu!catch"
-                        + " | " + acc_combo_miss + ": "
-                        + pp_values[0] + "pp"
-                        + " | " + end_props)
             elif mode == 3:
                 try:
                     score = int(score)
@@ -190,53 +202,10 @@ class Osu:
                     return bot.msg(e.source.nick, "Check your accuracy again, please")
 
                 osu_user.last_kwargs = [acc, score]
-                pp_values = (str(Osu.calculate_pp(beatmap_data,
-                                                  beatmap_data_api, mode=mode, acc=acc,
-                                                  score=score, mods=mods)),)
-                acc_score = str(acc) + "% " + str(score) + " " + mods_name
-                end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
-                            + "* " + bm_time \
-                            + " OD" + str(beatmap_data.overall_difficulty) \
-                            + " " + str(Osu.key_count(beatmap_data)) + "key" \
-                            + " OBJ" + str(len(beatmap_data.hit_objects))
-                bot.msg(e.source.nick, artist_name
-                        + " | osu!mania"
-                        + " | " + acc_score + ": "
-                        + pp_values[0] + "pp"
-                        + " | " + end_props)
-            elif mode == 1:
-                try:
-                    miss = int(miss)
-                    if miss < max_combo or miss >= 0:
-                        miss = miss
-                    else:
-                        raise SyntaxError
-                except:
-                    return bot.msg(e.source.nick, "You MISSed something there")
-                try:
-                    acc = float(acc)
-                    if 0 <= acc <= 100:
-                        acc = acc
-                    else:
-                        raise SyntaxError
-                except:
-                    return bot.msg(e.source.nick, "Check your accuracy again, please")
 
-                osu_user.last_kwargs = [acc, miss]
-                pp_values = (str(Osu.calculate_pp(beatmap_data,
-                                                  beatmap_data_api, mode=mode, acc=acc,
-                                                  miss=miss, mods=mods)),)
-                acc_miss = str(acc) + "% " + str(miss) + "miss " + mods_name
-                end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
-                            + "* " + bm_time \
-                            + " OD" + str(beatmap_data.overall_difficulty) \
-                            + " MAX" + str(beatmap_data_api.max_combo)
-                bot.msg(e.source.nick, artist_name
-                        + " | osu!taiko"
-                        + " | " + acc_miss + ": "
-                        + pp_values[0] + "pp"
-                        + " | " + end_props)
         elif split_msg[0] == "with":
+
+            # region mod_header
             # checks for former acm data if any
             if not osu_user.last_kwargs:
                 acm_data = False
@@ -263,6 +232,8 @@ class Osu:
                 return bot.msg(e.source.nick, "These mods are not supported yet!")
 
             osu_user.last_mod = mods
+            # endregion
+
             if mode == 2:  # hd and fl
                 if mods & ~slider.Mod.parse('hdfl'):
                     return bot.msg(e.source.nick, "These mods are not supported yet!")
@@ -271,18 +242,6 @@ class Osu:
                     acc, combo, miss = acm_data
                 else:
                     acc, combo, miss = (100, beatmap_data_api.max_combo, 0)
-                pp_values = (str(Osu.calculate_pp(beatmap_data, beatmap_data_api, mode, acc=acc,
-                                                  player_combo=combo, miss=miss, mods=mods)),)
-                acc_combo_miss = str(acc) + "% " + str(combo) + "x " + str(miss) + "miss " + mods_name
-                end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
-                            + "* " + bm_time \
-                            + " AR" + str(beatmap_data.approach_rate) \
-                            + " MAX" + str(beatmap_data_api.max_combo)
-                return bot.msg(e.source.nick, artist_name
-                               + " | osu!catch"
-                               + " | " + acc_combo_miss + ": "
-                               + pp_values[0] + "pp"
-                               + " | " + end_props)
             elif mode == 3:  # nf and ez only
                 if mods & ~slider.Mod.parse('nfez'):
                     return bot.msg(e.source.nick, "These mods are not supported yet!")
@@ -291,37 +250,23 @@ class Osu:
                     acc, score = acm_data
                 else:
                     acc, score = (100, 1000000)
-                pp_values = (str(Osu.calculate_pp(beatmap_data, beatmap_data_api, mode=mode, acc=acc, score=score,
-                                                  mods=mods)),)
-                acc_score = str(acc) + "% " + str(score) + " " + mods_name
-                end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
-                            + "* " + bm_time \
-                            + " OD" + str(beatmap_data.overall_difficulty) \
-                            + " " + str(Osu.key_count(beatmap_data)) + "key" \
-                            + " OBJ" + str(len(beatmap_data.hit_objects))
-                return bot.msg(e.source.nick, artist_name
-                               + " | osu!mania"
-                               + " | " + acc_score + ": "
-                               + pp_values[0] + "pp"
-                               + " | " + end_props)
             elif mode == 1:  # all mods as of now
                 if acm_data:
                     acc, miss = acm_data
                 else:
                     acc, miss = (100, 0)
-                pp_values = (str(Osu.calculate_pp(beatmap_data, beatmap_data_api, mode, acc=acc, miss=miss,
-                                                  mods=mods)),)
-                acc_miss = str(acc) + "% " + str(miss) + "miss " + mods_name
-                end_props = str(round(float(beatmap_data_api.star_rating), 2)) \
-                            + "* " + bm_time \
-                            + " OD" + str(beatmap_data.overall_difficulty) \
-                            + " MAX" + str(beatmap_data_api.max_combo)
-                return bot.msg(e.source.nick, artist_name
-                               + " | osu!taiko"
-                               + " | " + acc_miss + ": "
-                               + pp_values[0] + "pp"
-                               + " | " + end_props)
-                # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+        pp_args = ((),
+                   tuple(dict(acc=acc, miss=miss, mods=mods)),
+                   tuple(dict(acc=acc, player_combo=combo, miss=miss, mods=mods)),
+                   tuple(dict(acc=acc, score=score, mods=mods)))
+        estimate_strs = ((),
+                         tuple(f"{acc}% {miss}miss {mods_name}"),
+                         tuple(f"{acc}% {combo}x {miss}miss {mods_name}"),
+                         tuple(f"{acc}% {score} {mods_name}"))
+        bot.msg(e.source.nick,
+                self.format_message(beatmap_data, beatmap_data_api, mode, estimate_strs, pp_args))
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -330,17 +275,13 @@ class Osu:
         artist_name = beatmap_data.artist + " - " + beatmap_data.title + " [" + beatmap_data.version + "]"
         bm_time = utils.Utils.strfdelta(datetime.timedelta(seconds=int(beatmap_data_api.hit_length.seconds),
                                                            milliseconds=beatmap_data_api.hit_length.seconds -
-                                                                        int(beatmap_data_api.hit_length.seconds)),
+                                                           int(beatmap_data_api.hit_length.seconds)),
                                         "{M:02}:{S:02}")
 
         end_props = f"{round(float(beatmap_data_api.star_rating), 2)}* {bm_time} "
 
         estimate_str = (estimate_strs[mode])
-        try:
-            pp_values = tuple(str(Osu.calculate_pp(beatmap_data, beatmap_data_api, mode=mode, acc=i))
-                              for i in (pp_args[mode]))
-        except:
-            pass
+        pp_values = tuple(str(Osu.calculate_pp(beatmap_data, beatmap_data_api, mode=mode, **i)) for i in pp_args[mode])
 
         if mode == 1:
             mode_str = "osu!taiko"
@@ -350,8 +291,6 @@ class Osu:
             end_props += f"AR{beatmap_data.approach_rate} MAX{beatmap_data_api.max_combo}"
         elif mode == 3:
             mode_str = "osu!mania"
-            pp_values = tuple(str(Osu.calculate_pp(beatmap_data, beatmap_data_api, mode=mode, acc=i[0], score=i[1]))
-                              for i in [(100, 1000000), (99, 970000), (97, 900000)])
             end_props += f"OD{beatmap_data.overall_difficulty} {Osu.key_count(beatmap_data)}key " \
                          f"OBJ{len(beatmap_data.hit_objects)}"
         else:
@@ -359,7 +298,7 @@ class Osu:
 
         final_str = f"{artist_name} | {mode_str} | "
         try:
-            for i in range(len(estimate_str)-1):
+            for i in range(len(estimate_str) - 1):
                 assert type(estimate_str[i]) is str
                 final_str += f"{estimate_str[i]}: {round(float(pp_values[i]), 2)}pp | "
         except IndexError:
@@ -387,7 +326,7 @@ class Osu:
             beatmap_data_api = self.cmd.osu_api_client.beatmap(beatmap_id=int(beatmap_id),
                                                                include_converted_beatmaps=True)
 
-        return (beatmap_data, beatmap_data_api, mode)
+        return beatmap_data, beatmap_data_api, mode
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -395,39 +334,42 @@ class Osu:
         # https://github.com/Tyrrrz/OsuHelper/blob/master/OsuHelper/Services/RecommendationService.cs#L34
 
         def get_recommendation():
-            recommend_list = list(bot.recommend[e.source.nick][user_mode].rec_list.items())
+            rec_obj = bot.recommend[e.source.nick][user_mode]
+            recommend_list = list(rec_obj.rec_list.items())
             try:
-                recommended = recommend_list[bot.recommend[e.source.nick][user_mode].i]
+                recommended = recommend_list[rec_obj.i]
             except IndexError:
                 bot.msg(e.source.nick, "No more recommendations. Try !r reset")
                 raise IndexError
 
             # start parsing data
-            estimate_strs = ((),
-                             (f"Confidence {recommended[1]} | SS", "99% FC", "98% FC"),
-                             (f"Confidence {recommended[1]} | SS", "99.5% FC", "99% FC", "98.5% FC"),
-                             (f"Confidence {recommended[1]} | SS", "99% 970k", "97% 900k"))
-            pp_args = ((), (100, 99, 98), (100, 99.5, 99, 98.5), ((100, 1000000), (99, 970000), (97, 900000)))
+            try:
+                estimate_strs = ((),
+                                 (f"Confidence {recommended[1]} | SS", "99% FC", "98% FC"),
+                                 (f"Confidence {recommended[1]} | SS", "99.5% FC", "99% FC", "98.5% FC"),
+                                 (f"Confidence {recommended[1]} | SS", "99% 970k", "97% 900k"))
+                pp_args = ((),
+                           tuple({"acc": i} for i in range(100, 97, -1)),
+                           tuple({"acc": i} for i in numpy.arange(100, 98, -0.5)),
+                           (
+                               {"acc": 100, "score": 1000000}, {"acc": 99, "score": 9700000},
+                               {"acc": 97, "score": 900000}))
 
-            beatmap_data, beatmap_data_api, mode = self.get_data(e, recommended[0])
+                beatmap_data, beatmap_data_api, mode = self.get_data(e, recommended[0])
 
-            osu_user.last_beatmap = (beatmap_data, beatmap_data_api, mode, recommended[0])
+                osu_user.last_beatmap = (beatmap_data, beatmap_data_api, mode, recommended[0])
 
-            bot.msg(e.source.nick, self.format_message(beatmap_data, beatmap_data_api, mode, estimate_strs, pp_args))
+                bot.msg(e.source.nick,
+                        self.format_message(beatmap_data, beatmap_data_api, mode, estimate_strs, pp_args))
+            except e:
+                bot.msg(e.source.nick, "ParseError: contact the bot author")
 
             # new object, then commit to sqlitedict
-            try:
-                x = bot.recommend[e.source.nick]
-                x[user_mode] = Recommendation(rec_list=bot.recommend[e.source.nick][user_mode].rec_list,
-                                              i=bot.recommend[e.source.nick][user_mode].i + 1,
-                                              last_refresh=bot.recommend[e.source.nick][user_mode].last_refresh)
-                bot.recommend[e.source.nick] = x
-            except:
-                x = [-1, None, None, None]
-                x[user_mode] = Recommendation(rec_list=bot.recommend[e.source.nick][user_mode].rec_list,
-                                              i=bot.recommend[e.source.nick][user_mode].i + 1,
-                                              last_refresh=datetime.datetime.now())
-                bot.recommend[e.source.nick] = x
+            x = bot.recommend[e.source.nick]
+            x[user_mode] = Recommendation(rec_list=bot.recommend[e.source.nick][user_mode].rec_list,
+                                          i=bot.recommend[e.source.nick][user_mode].i + 1,
+                                          last_refresh=bot.recommend[e.source.nick][user_mode].last_refresh)
+            bot.recommend[e.source.nick] = x
 
         def iterate_maps_callback(result):
             _temp_list.extend(result)
@@ -451,12 +393,14 @@ class Osu:
                         Recommendation(rec_list=_temp3, i=0, last_refresh=bot.recommend[e.source.nick][user_mode])
                     # 0 used to be iter(_temp3.items())
                     bot.recommend[e.source.nick] = x
+                    bot.recommend.commit()
                 except:
                     x = [-1, None, None, None]
                     x[user_mode] = \
                         Recommendation(rec_list=_temp3, i=0, last_refresh=datetime.datetime.now())
                     # 0 used to be iter(_temp3.items())
                     bot.recommend[e.source.nick] = x
+                    bot.recommend.commit()
                 get_recommendation()
 
         def iterate_maps_errback(failure):
@@ -478,23 +422,25 @@ class Osu:
             total_scores = []
             for j in high_scores:
                 user_high_scores = sorted(
-                    [k for k in client.user_best(user_id=j.user_id, game_mode=game_mode)
-                     if (k.rank == "S" or k.rank == "X" or k.rank == "SH" or k.rank == "XH") and
-                     (pp_limit_lower <= k.pp <= pp_limit_upper)],
-                    key=lambda x: abs(x.pp - i.pp))[:20]
+                        [k for k in client.user_best(user_id=j.user_id, game_mode=game_mode)
+                         if (k.rank == "S" or k.rank == "X" or k.rank == "SH" or k.rank == "XH") and
+                         (pp_limit_lower <= k.pp <= pp_limit_upper)],
+                        key=lambda x: abs(x.pp - i.pp))[:20]
                 total_scores.extend([k.beatmap_id for k in user_high_scores])
             return total_scores
 
         def iterate_map():
             # through own top plays
+            rec_thread_pool = threadpool.ThreadPool(5, 10, "recommendations: " + osu_user.user_id)
             for i in top_plays:
                 # single thread
                 # iterate_maps_callback(gen_rec_from_top(i))
 
                 # multi-thread
-                d = threads.deferToThreadPool(rec_thread_pool, gen_rec_from_top, i)
+                d = threads.deferToThreadPool(reactor, rec_thread_pool, gen_rec_from_top, i)
                 d.addCallback(iterate_maps_callback)
                 d.addErrback(iterate_maps_errback)
+            rec_thread_pool.start()
 
         user_mode = osu_user.preferences[e.source.nick].mode
 
@@ -599,8 +545,8 @@ class Osu:
                                     ((score - 800000) / 100000 * 0.1 + 0.85 if score < 900000 else
                                      ((score - 900000) / 100000 * 0.05 + 0.95))))))
             acc_factor = math.pow(
-                math.pow((150 / perfect_window) * math.pow(acc / 100, 16), 1.8) * 2.5 *
-                min(1.15, math.pow(object_count / 1500, 0.3)), 1.1)
+                    math.pow((150 / perfect_window) * math.pow(acc / 100, 16), 1.8) * 2.5 *
+                    min(1.15, math.pow(object_count / 1500, 0.3)), 1.1)
             strain_factor = math.pow(base_strain * strain_multiplier, 1.1)
             final_pp = math.pow(acc_factor + strain_factor, 1 / 1.1) * 1.1
             try:

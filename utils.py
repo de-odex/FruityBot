@@ -183,7 +183,7 @@ class Utils:
         bot.user_pref.commit()
 
     @staticmethod
-    def create_db(db, table):
+    def create_sqlite_dict(db, table):
         def encode(obj):
             return sqlite3.Binary(zlib.compress(dill.dumps(obj, dill.HIGHEST_PROTOCOL)))
 
@@ -194,7 +194,7 @@ class Utils:
 
     @staticmethod
     def update_db():
-        user_pref = Utils.create_db("./userpref2.db", "userpref")
+        user_pref = Utils.create_sqlite_dict("./userpref2.db", "userpref")
         old_user_pref = sqlite3.connect("./userpref.db")
         db_cursor = old_user_pref.cursor()
         try:
@@ -225,7 +225,7 @@ class Commands:
             logger.info("Created osu! library")
         else:
             self.osu_library = slider.library.Library(self.lib_dir)
-        self.osu_api_client = slider.client.Client(self.osu_library, self.Config.config.osu.api)
+        self.osu_api_client = slider.client.Client(self.osu_library, self.Config.config.osu.api, max_requests=60)
         self.osu_non_std_library = osu.Osu(self, bot)
 
     @is_owner()
@@ -248,13 +248,7 @@ class Commands:
     @is_owner()
     @command()
     def test(self, bot, e):
-        user_mode = bot.users.get(e.source.nick, None).preferences[e.source.nick].mode
-        x = bot.recommend[e.source.nick]
-        x[user_mode] = osu.Recommendation(rec_list=bot.recommend[e.source.nick][user_mode].rec_list,
-                                          i=0,
-                                          last_refresh=datetime.datetime.now())
-        bot.recommend[e.source.nick] = x
-        bot.msg(e.source.nick, "reset")
+        bot.msg(e.source.nick, str(bot.recommend[e.source.nick]))
 
     @is_owner()
     @command()
@@ -334,7 +328,8 @@ class Commands:
                     bot.msg(e.source.nick, "Reset your recommendations!")
                 elif e.arguments[0].split()[1] == "reload":
                     x = bot.recommend[user.user_id]
-                    x[bot.users[e.source.nick].preferences[e.source.nick].mode] = osu.Recommendation(rec_list=x.rec_list, i=0, last_refresh=x.last_refresh)
+                    x[bot.users[e.source.nick].preferences[e.source.nick].mode] = \
+                        osu.Recommendation(rec_list=x.rec_list, i=0, last_refresh=x.last_refresh)
                     bot.recommend[user.user_id] = x
                     bot.msg(e.source.nick, "Reloaded your recommendations!")
         except:

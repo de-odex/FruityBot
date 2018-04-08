@@ -3,7 +3,6 @@ import logging.config
 import os
 import pathlib
 
-import sqlitedict
 from irc.client import NickMask, Event
 from twisted.internet import reactor, protocol, threads
 from twisted.words.protocols import irc
@@ -15,6 +14,12 @@ logger = logging.getLogger(__name__)
 
 
 class FruityBot(irc.IRCClient):
+    def rawDataReceived(self, data):
+        raise NotImplementedError
+
+    def dccSend(self, user, file):
+        raise NotImplementedError
+
     lineRate = 1
     heartbeatInterval = 64
 
@@ -33,8 +38,8 @@ class FruityBot(irc.IRCClient):
         self.UPDATE_MSG = self.Config.config.main.update_msg
         self.FIRST_TIME_MSG = self.Config.config.main.first_time_msg
 
-        self.user_pref = utils.Utils.create_db("./userpref.db", "userpref")
-        self.recommend = sqlitedict.SqliteDict('./recommend.db')
+        self.user_pref = utils.Utils.create_sqlite_dict("./userpref.db", "userpref")
+        self.recommend = utils.Utils.create_sqlite_dict("./recommend.db", "recommend")
         self.start_time = first_time
 
         self.users = users
@@ -47,7 +52,7 @@ class FruityBot(irc.IRCClient):
         self.test = test
         self.channel = channel
 
-        #region reload_init
+        # region reload_init
         try:
             try:
                 self.Config = utils.Config("debug.json")
@@ -62,8 +67,8 @@ class FruityBot(irc.IRCClient):
         self.UPDATE_MSG = self.Config.config.main.update_msg
         self.FIRST_TIME_MSG = self.Config.config.main.first_time_msg
 
-        self.user_pref = utils.Utils.create_db("./userpref.db", "userpref")
-        self.recommend = utils.Utils.create_db("./recommend.db", "recommend")
+        self.user_pref = utils.Utils.create_sqlite_dict("./userpref.db", "userpref")
+        self.recommend = utils.Utils.create_sqlite_dict("./recommend.db", "recommend")
         self.start_time = first_time
 
         self.users = users
@@ -71,7 +76,7 @@ class FruityBot(irc.IRCClient):
         self.Commands = utils.Commands(self, self.Config)
         self.command_funcs = [func for func in dir(utils.Commands) if callable(getattr(utils.Commands, func))
                               and not func.startswith("_")]
-        #endregion
+        # endregion
 
         logger.debug("Trying nickname " + self.nickname)
         logger.debug("On server " + self.Config.config.main.server)
