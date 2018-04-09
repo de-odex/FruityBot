@@ -358,6 +358,9 @@ class Config:
     def __init__(self, conf_filename):
         self.config = box.Box(json.load(open(pathlib.Path("./" + conf_filename), "r")))
 
+    def __call__(self, *args, **kwargs):
+        return self.config
+
 
 class UserPref:
     def __init__(self, user_id, mode, updated=False):

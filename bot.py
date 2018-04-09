@@ -32,11 +32,11 @@ class FruityBot(irc.IRCClient):
         except FileNotFoundError:
             self.Config = utils.Config("config.json.template")
 
-        self.nickname = self.Config.config.main.nick
-        self.password = self.Config.config.osu.irc if self.Config.config.osu.irc else None
+        self.nickname = self.Config().main.nick
+        self.password = self.Config().osu.irc if self.Config().osu.irc else None
 
-        self.UPDATE_MSG = self.Config.config.main.update_msg
-        self.FIRST_TIME_MSG = self.Config.config.main.first_time_msg
+        self.UPDATE_MSG = self.Config().main.update_msg
+        self.FIRST_TIME_MSG = self.Config().main.first_time_msg
 
         self.user_pref = utils.Utils.create_sqlite_dict("./userpref.db", "userpref")
         self.recommend = utils.Utils.create_sqlite_dict("./recommend.db", "recommend")
@@ -48,8 +48,7 @@ class FruityBot(irc.IRCClient):
         self.command_funcs = [func for func in dir(utils.Commands) if callable(getattr(utils.Commands, func))
                               and not func.startswith("_")]
 
-    def __init__(self, first_time, users, channel=None, test=False):
-        self.test = test
+    def __init__(self, first_time, users, channel=None):
         self.channel = channel
 
         # region reload_init
@@ -61,11 +60,11 @@ class FruityBot(irc.IRCClient):
         except FileNotFoundError:
             self.Config = utils.Config("config.json.template")
 
-        self.nickname = self.Config.config.main.nick
-        self.password = self.Config.config.osu.irc if self.Config.config.osu.irc else None
+        self.nickname = self.Config().main.nick
+        self.password = self.Config().osu.irc if self.Config().osu.irc else None
 
-        self.UPDATE_MSG = self.Config.config.main.update_msg
-        self.FIRST_TIME_MSG = self.Config.config.main.first_time_msg
+        self.UPDATE_MSG = self.Config().main.update_msg
+        self.FIRST_TIME_MSG = self.Config().main.first_time_msg
 
         self.user_pref = utils.Utils.create_sqlite_dict("./userpref.db", "userpref")
         self.recommend = utils.Utils.create_sqlite_dict("./recommend.db", "recommend")
@@ -79,7 +78,7 @@ class FruityBot(irc.IRCClient):
         # endregion
 
         logger.debug("Trying nickname " + self.nickname)
-        logger.debug("On server " + self.Config.config.main.server)
+        logger.debug("On server " + self.Config().main.server)
         logger.debug("Using password " + (self.password if self.password is not None else "\"None\""))
 
     def irc_ERR_NICKNAMEINUSE(self, prefix, params):
@@ -89,10 +88,10 @@ class FruityBot(irc.IRCClient):
         logger.info("Now using " + self.nickname)
 
     def signedOn(self):
-        logger.info("Bot started as " + self.nickname + " at " + self.Config.config.main.server)
+        logger.info("Bot started as " + self.nickname + " at " + self.Config().main.server)
         self.startHeartbeat()
-        if self.channel is not None and self.Config.config.main.server != "cho.ppy.sh" or \
-           self.Config.config.main.server != "irc.ppy.sh":
+        if self.channel is not None and self.Config().main.server != "cho.ppy.sh" or \
+           self.Config().main.server != "irc.ppy.sh":
             self.join(self.channel)
         if self.test:
             self.quit()
@@ -103,7 +102,7 @@ class FruityBot(irc.IRCClient):
     def privmsg(self, user_host, channel, msg):
         user = user_host.split('!', 1)[0]
         logger.info(user + ": " + msg)
-        if msg[0] == self.Config.config.main.prefix:
+        if msg[0] == self.Config().main.prefix:
             try:
                 threads.deferToThread(self.message_to_commands, user_host, channel, msg)
             except Exception:
@@ -122,7 +121,7 @@ class FruityBot(irc.IRCClient):
             self.message_to_commands(user_host, channel, "!np " + data)
 
     def message_to_commands(self, user_host, target, msg):
-        commands = msg.split(self.Config.config.main.prefix)[1].split(";")
+        commands = msg.split(self.Config().main.prefix)[1].split(";")
         for msgs in commands:
             msgs = msgs.strip()
             self.do_command(user_host, target, msgs)
@@ -133,7 +132,7 @@ class FruityBot(irc.IRCClient):
 
         if cmd == "reload":
             logger.debug("Command incurred: " + cmd)
-            if e.source.nick == self.Config.config.main.owner:
+            if e.source.nick == self.Config().main.owner:
                 self.msg(e.source.nick, "Attempting a reload...")
                 try:
                     utils.reload_all(utils, 3)
@@ -164,7 +163,7 @@ class FruityBot(irc.IRCClient):
                 func(self.Commands, self, e)
             else:
                 self.msg(e.source.nick, "Invalid command: " + cmd + ". " +
-                         self.Config.config.main.prefix + "h for help.")
+                         self.Config().main.prefix + "h for help.")
 
 
 class BotFactory(protocol.ReconnectingClientFactory):
