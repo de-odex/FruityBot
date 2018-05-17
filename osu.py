@@ -535,18 +535,16 @@ class Osu:
             object_count = len(osu_b_data.hit_objects)
 
             perfect_window = 64 - 3 * od
-            strain1 = math.pow(5 * max(1.0, stars / 0.0825) - 4, 3) / 110000
+            strain1 = math.pow(5 * max(1.0, stars / 0.2) - 4, 2.2) / 135
             strain2 = 1 + 0.1 * min(1.0, object_count / 1500)
             base_strain = strain2 * strain1
-            strain_multiplier = (score / 500000 * 0.1 if score < 500000 else
-                                 ((score - 500000) / 100000 * 0.2 + 0.1 if score < 600000 else
-                                  ((score - 600000) / 100000 * 0.35 + 0.3 if score < 700000 else
-                                   ((score - 700000) / 100000 * 0.2 + 0.65 if score < 800000 else
-                                    ((score - 800000) / 100000 * 0.1 + 0.85 if score < 900000 else
-                                     ((score - 900000) / 100000 * 0.05 + 0.95))))))
-            acc_factor = math.pow(
-                    math.pow((150 / perfect_window) * math.pow(acc / 100, 16), 1.8) * 2.5 *
-                    min(1.15, math.pow(object_count / 1500, 0.3)), 1.1)
+            strain_multiplier = (score / 500000 * 0 if score < 500000 else
+                                 ((score - 500000) / 100000 * 0.3 if score < 600000 else
+                                  ((score - 600000) / 100000 * 0.25 + 0.3 if score < 700000 else
+                                   ((score - 700000) / 100000 * 0.2 + 0.55 if score < 800000 else
+                                    ((score - 800000) / 100000 * 0.15 + 0.75 if score < 900000 else
+                                     ((score - 900000) / 100000 * 0.1 + 0.90))))))
+            acc_factor = max(0, 0.2 - ((perfect_window - 34) * 0.006667)) * strain_multiplier * math.pow((max(0, (score - 960000)) / 40000.0), 1.1)
             strain_factor = math.pow(base_strain * strain_multiplier, 1.1)
             final_pp = math.pow(acc_factor + strain_factor, 1 / 1.1) * 1.1
             try:
