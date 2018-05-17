@@ -538,7 +538,7 @@ class Osu:
             strain1 = math.pow(5 * max(1.0, stars / 0.2) - 4, 2.2) / 135
             strain2 = 1 + 0.1 * min(1.0, object_count / 1500)
             base_strain = strain2 * strain1
-            strain_multiplier = (score / 500000 * 0 if score < 500000 else
+            strain_multiplier = (0 if score < 500000 else
                                  ((score - 500000) / 100000 * 0.3 if score < 600000 else
                                   ((score - 600000) / 100000 * 0.25 + 0.3 if score < 700000 else
                                    ((score - 700000) / 100000 * 0.2 + 0.55 if score < 800000 else
