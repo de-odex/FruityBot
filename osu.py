@@ -546,7 +546,7 @@ class Osu:
                                      ((score - 900000) / 100000 * 0.1 + 0.90))))))
             acc_factor = max(0, 0.2 - ((perfect_window - 34) * 0.006667)) * strain_multiplier * math.pow((max(0, (score - 960000)) / 40000.0), 1.1)
             strain_factor = math.pow(base_strain * strain_multiplier, 1.1)
-            final_pp = math.pow(acc_factor + strain_factor, 1 / 1.1) * 1.1
+            final_pp = math.pow(acc_factor + strain_factor, 1 / 1.1) * 0.8
             try:
                 if mods & 2 == 2:
                     final_pp *= 0.5
