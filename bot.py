@@ -3,14 +3,14 @@ import logging.config
 import os
 import pathlib
 
-from irc.client import NickMask, Event
-from twisted.internet import reactor, protocol, threads
+import colorama
+import cyclone.web
+from irc.client import Event, NickMask
+from twisted.internet import protocol, reactor, threads
+from twisted.python import threadpool
 from twisted.words.protocols import irc
 
 import utils
-
-logging.config.fileConfig('logging.conf')
-logger = logging.getLogger(__name__)
 
 
 class FruityBot(irc.IRCClient):
@@ -23,7 +23,7 @@ class FruityBot(irc.IRCClient):
     lineRate = 1
     heartbeatInterval = 64
 
-    def reload_init(self, first_time, users):
+    def reload_init(self, first_time: datetime.datetime, users: dict):
         try:
             try:
                 self.Config = utils.Config("debug.json")
@@ -43,6 +43,7 @@ class FruityBot(irc.IRCClient):
         self.start_time = first_time
 
         self.users = users
+        self.thread_pools = utils.RecentDict(30)
 
         self.Commands = utils.Commands(self, self.Config)
         self.command_funcs = [func for func in dir(utils.Commands) if callable(getattr(utils.Commands, func))
@@ -71,6 +72,7 @@ class FruityBot(irc.IRCClient):
         self.start_time = first_time
 
         self.users = users
+        self.thread_pools = utils.RecentDict(30)
 
         self.Commands = utils.Commands(self, self.Config)
         self.command_funcs = [func for func in dir(utils.Commands) if callable(getattr(utils.Commands, func))
@@ -91,40 +93,43 @@ class FruityBot(irc.IRCClient):
         logger.info("Bot started as " + self.nickname + " at " + self.Config().main.server)
         self.startHeartbeat()
         if self.channel is not None and self.Config().main.server != "cho.ppy.sh" or \
-           self.Config().main.server != "irc.ppy.sh":
+                self.Config().main.server != "irc.ppy.sh":
             self.join(self.channel)
-        if self.test:
-            self.quit()
 
     def joined(self, channel):
-        logger.info("I have joined " + channel)
+        logger.info("Joined " + channel)
 
     def privmsg(self, user_host, channel, msg):
         user = user_host.split('!', 1)[0]
-        logger.info(user + ": " + msg)
+        logger.info(f"MSG: BOT:{self.nickname} <- USER: {user}: {msg}")
+        self.on_msg(user_host, channel, msg)
+
+    def action(self, user_host, channel, msg):
+        user = user_host.split('!', 1)[0]
+        logger.info(f"ACT: BOT:{self.nickname} <- USER: *{user} {msg}")
+        self.on_msg(user_host, channel, "!np " + msg)
+
+    def on_msg(self, user_host, channel, msg):
+        user = user_host.split('!', 1)[0]
         if msg[0] == self.Config().main.prefix:
             try:
-                threads.deferToThread(self.message_to_commands, user_host, channel, msg)
+                if user in self.thread_pools:
+                    user_pool = self.thread_pools[user]
+                else:
+                    user_pool = threadpool.ThreadPool(5, 10, user)
+                    self.thread_pools[user] = user_pool
+                threads.deferToThreadPool(reactor, user_pool, self.message_to_commands, user_host, channel, msg)
+                user_pool.start()
             except Exception:
                 logger.exception("Deferred Exception")
                 self.msg(user, "Falling back to single-thread...")
                 self.message_to_commands(user_host, channel, msg)
 
-    def action(self, user_host, channel, data):
-        user = user_host.split('!', 1)[0]
-        logger.info("* " + user + " " + data)
-        try:
-            threads.deferToThread(self.message_to_commands, user_host, channel, "!np " + data)
-        except Exception:
-            logger.exception("Deferred Exception")
-            self.msg(user, "Falling back to single-thread...")
-            self.message_to_commands(user_host, channel, "!np " + data)
-
-    def message_to_commands(self, user_host, target, msg):
-        commands = msg.split(self.Config().main.prefix)[1].split(";")
-        for msgs in commands:
-            msgs = msgs.strip()
-            self.do_command(user_host, target, msgs)
+    def message_to_commands(self, user_host, target, command):
+        commands = command.split(self.Config().main.prefix)[1].split(";")
+        for command in commands:
+            command = command.strip()
+            self.do_command(user_host, target, command)
 
     def do_command(self, user_host, target, msg):
         cmd = msg.split()[0]
@@ -147,6 +152,7 @@ class FruityBot(irc.IRCClient):
             if cmd.split()[0] in self.command_funcs or \
                     any((cmd.split()[0] in s and s[:4] == "cmd_") for s in self.command_funcs):
                 logger.debug("Command incurred: " + cmd)
+
                 # check if user in database
                 in_f_db = utils.Utils.check_user_in_db(e.source, self, "ftm")
                 if not in_f_db:
@@ -165,6 +171,10 @@ class FruityBot(irc.IRCClient):
                 self.msg(e.source.nick, "Invalid command: " + cmd + ". " +
                          self.Config().main.prefix + "h for help.")
 
+    def msg(self, user, message, length=None):
+        logger.info(f"MSG: BOT:{self.nickname} -> USER:{user}: {message}")
+        super().msg(user, message, length)
+
 
 class BotFactory(protocol.ReconnectingClientFactory):
     """A factory for Bots.
@@ -172,8 +182,11 @@ class BotFactory(protocol.ReconnectingClientFactory):
     A new protocol instance will be created each time we connect to the server.
     """
 
+    delay = 5
     maxDelay = 5
     initialDelay = 5
+    jitter = 0
+    factor = 0
 
     def __init__(self, channel=None):
         self.first_time = datetime.datetime.now()
@@ -186,35 +199,52 @@ class BotFactory(protocol.ReconnectingClientFactory):
         return p
 
     def clientConnectionLost(self, connector, reason):
-        logger.warning('Lost connection.  Reason:' + str(reason).replace('\n', '').replace('\r', ''))
+        logger.warning('Lost connection.  Reason: ' + str(reason).replace('\n', '').replace('\r', ''))
         protocol.ReconnectingClientFactory.clientConnectionLost(self, connector, reason)
 
     def clientConnectionFailed(self, connector, reason):
-        logger.warning('Connection failed.  Reason:' + str(reason).replace('\n', '').replace('\r', ''))
+        logger.warning('Connection failed.  Reason:  ' + str(reason).replace('\n', '').replace('\r', ''))
         protocol.ReconnectingClientFactory.clientConnectionFailed(self, connector, reason)
 
 
-def main():
+class OnlineHandler(cyclone.web.RequestHandler):
+    def initialize(self, connector):
+        self.connector = connector
+
+    def get(self):
+        if self.connector.state != "connected":
+            self.set_status(404)
+        else:
+            self.write(self.connector.state)
+
+
+if __name__ == "__main__":
+    colorama.init()
+    logging.ColorFormatter = utils.ColorFormatter
+    logging.config.fileConfig('logging.conf')
+    logger = logging.getLogger(__name__)
+
     if not pathlib.Path("./log/").exists():
         os.mkdir("./log/")
 
-    logger.debug("Start of __main__")
-
     # create factory protocol and application
-    f = BotFactory("bottest")
+    f_bot = BotFactory("bottest")
 
     # connect factory to this host and port
     try:
         try:
-            reactor.connectTCP(utils.Config("debug.json").config.main.server, 6667, f)
+            bot = reactor.connectTCP(utils.Config("debug.json").config.main.server, 6667, f_bot)
         except FileNotFoundError:
-            reactor.connectTCP(utils.Config("config.json").config.main.server, 6667, f)
+            bot = reactor.connectTCP(utils.Config("config.json").config.main.server, 6667, f_bot)
     except FileNotFoundError:
-        reactor.connectTCP(utils.Config("config.json.template").config.main.server, 6667, f)
+        bot = reactor.connectTCP(utils.Config("config.json.template").config.main.server, 6667, f_bot)
 
+    a_api = cyclone.web.Application([
+        (r"/api/is_online", OnlineHandler, {"connector": bot})
+    ])
+
+    reactor.listenTCP(9009, a_api)
+
+    print()
     # run bot
     reactor.run()
-
-
-if __name__ == "__main__":
-    main()

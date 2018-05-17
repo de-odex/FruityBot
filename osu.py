@@ -1,17 +1,17 @@
 import datetime
 import logging
 import math
-import numpy
 import operator
-import re
 import urllib.parse
-from collections import OrderedDict, Counter, namedtuple
+from collections import Counter, OrderedDict, namedtuple
 from itertools import islice
 
-import slider
-from twisted.internet import threads, reactor
+import numpy
+import urlextract
+from twisted.internet import reactor, threads
 from twisted.python import threadpool
 
+import slider
 import utils
 
 logger = logging.getLogger(__name__)
@@ -57,9 +57,10 @@ class Osu:
         osu_user.last_mod = False
         osu_user.last_kwargs = False
 
-        link_str = re.findall(
-                utils.URL_REGEX,
-                e.arguments[0])
+        url_extractor = urlextract.URLExtract()
+        url_extractor.set_stop_chars_left(url_extractor.get_stop_chars_left() | {'['})
+        url_extractor.set_stop_chars_right(url_extractor.get_stop_chars_right() | {']'})
+        link_str = url_extractor.find_urls(e.arguments[0])
         link = urllib.parse.urlparse(link_str[0])
         if link.path.split("/")[1] == "b":
             beatmap_id = link.path.split("/")[2].split("&")[0]
@@ -78,7 +79,7 @@ class Osu:
         pp_args = ((),
                    tuple({"acc": i} for i in range(100, 97, -1)),
                    tuple({"acc": i} for i in numpy.arange(100, 98, -0.5)),
-                   ({"acc": 100, "score": 1000000}, {"acc": 99, "score": 9700000}, {"acc": 97, "score": 900000}))
+                   ({"acc": 100, "score": 1000000}, {"acc": 99, "score": 970000}, {"acc": 97, "score": 900000}))
 
         beatmap_data, beatmap_data_api, mode = self.get_data(e, beatmap_id)
 
@@ -88,6 +89,7 @@ class Osu:
         return True
 
     def acm_mod(self, osu_user, bot, e):
+        acc, miss, combo, mods, score = (0, 0, 0, 0, 0)
 
         # region acm_header
         split_msg = e.arguments[0].split()
@@ -212,58 +214,51 @@ class Osu:
             else:
                 acm_data = osu_user.last_kwargs
 
-            all_mods = slider.Mod.parse('nfezhdhrfl')
+            all_mods = numpy.uint32(slider.Mod.parse('ezhrhtdthdflsonf'))
 
             # reads args of message
             mods = slider.Mod.parse(split_msg[1]) & all_mods
 
             # sets mod names for output and checks if no args were passed
-            if mods & 1 == 1:
-                mods_name += "NF"
-            if mods & 2 == 2:
-                mods_name += "EZ"
-            if mods & 8 == 8:
-                mods_name += "HD"
-            if mods & 16 == 16:
-                mods_name += "HR"
-            if mods & 1024 == 1024:
-                mods_name += "FL"
             if mods == 0:
                 return bot.msg(e.source.nick, "These mods are not supported yet!")
+            mods_name = slider.Mod.serialize(mods).upper()
 
             osu_user.last_mod = mods
+
+            # supported mods
+            sup_mods = ("", "nfezhdhrfl", "hdfl", "nfez")
+            uns_mod = mods & ~numpy.uint32(slider.Mod.parse(sup_mods[mode]))
+            if uns_mod:
+                return bot.msg(e.source.nick, f"These mods: \"{slider.Mod.serialize(uns_mod)}\", are not supported "
+                                              f"yet!")
+
             # endregion
 
-            if mode == 2:  # hd and fl
-                if mods & ~slider.Mod.parse('hdfl'):
-                    return bot.msg(e.source.nick, "These mods are not supported yet!")
-
+            if mode == 1:  # all mods as of now
+                if acm_data:
+                    acc, miss = acm_data
+                else:
+                    acc, miss = (100, 0)
+            elif mode == 2:  # hd and fl
                 if acm_data:
                     acc, combo, miss = acm_data
                 else:
                     acc, combo, miss = (100, beatmap_data_api.max_combo, 0)
             elif mode == 3:  # nf and ez only
-                if mods & ~slider.Mod.parse('nfez'):
-                    return bot.msg(e.source.nick, "These mods are not supported yet!")
-
                 if acm_data:
                     acc, score = acm_data
                 else:
                     acc, score = (100, 1000000)
-            elif mode == 1:  # all mods as of now
-                if acm_data:
-                    acc, miss = acm_data
-                else:
-                    acc, miss = (100, 0)
 
         pp_args = ((),
-                   tuple(dict(acc=acc, miss=miss, mods=mods)),
-                   tuple(dict(acc=acc, player_combo=combo, miss=miss, mods=mods)),
-                   tuple(dict(acc=acc, score=score, mods=mods)))
+                   (dict(acc=acc, miss=miss, mods=mods),),
+                   (dict(acc=acc, player_combo=combo, miss=miss, mods=mods),),
+                   (dict(acc=acc, score=score, mods=mods),))
         estimate_strs = ((),
-                         tuple(f"{acc}% {miss}miss {mods_name}"),
-                         tuple(f"{acc}% {combo}x {miss}miss {mods_name}"),
-                         tuple(f"{acc}% {score} {mods_name}"))
+                         (f"{acc}% {miss}miss {mods_name}",),
+                         (f"{acc}% {combo}x {miss}miss {mods_name}",),
+                         (f"{acc}% {score} {mods_name}",))
         bot.msg(e.source.nick,
                 self.format_message(beatmap_data, beatmap_data_api, mode, estimate_strs, pp_args))
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -275,7 +270,7 @@ class Osu:
         artist_name = beatmap_data.artist + " - " + beatmap_data.title + " [" + beatmap_data.version + "]"
         bm_time = utils.Utils.strfdelta(datetime.timedelta(seconds=int(beatmap_data_api.hit_length.seconds),
                                                            milliseconds=beatmap_data_api.hit_length.seconds -
-                                                           int(beatmap_data_api.hit_length.seconds)),
+                                                                        int(beatmap_data_api.hit_length.seconds)),
                                         "{M:02}:{S:02}")
 
         end_props = f"{round(float(beatmap_data_api.star_rating), 2)}* {bm_time} "
@@ -298,7 +293,7 @@ class Osu:
 
         final_str = f"{artist_name} | {mode_str} | "
         try:
-            for i in range(len(estimate_str) - 1):
+            for i in range(len(estimate_str)):
                 assert type(estimate_str[i]) is str
                 final_str += f"{estimate_str[i]}: {round(float(pp_values[i]), 2)}pp | "
         except IndexError:
@@ -351,9 +346,9 @@ class Osu:
                 pp_args = ((),
                            tuple({"acc": i} for i in range(100, 97, -1)),
                            tuple({"acc": i} for i in numpy.arange(100, 98, -0.5)),
-                           (
-                               {"acc": 100, "score": 1000000}, {"acc": 99, "score": 9700000},
-                               {"acc": 97, "score": 900000}))
+                           ({"acc": 100, "score": 1000000},
+                            {"acc": 99, "score": 9700000},
+                            {"acc": 97, "score": 900000}))
 
                 beatmap_data, beatmap_data_api, mode = self.get_data(e, recommended[0])
 

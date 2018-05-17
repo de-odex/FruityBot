@@ -1,5 +1,7 @@
 twisted
 dill
+python-box
 sqlitedict
 slider
 irc
+colorama

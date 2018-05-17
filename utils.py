@@ -7,21 +7,23 @@ import pathlib
 import sqlite3
 import sys
 import zlib
+from collections import OrderedDict
 from functools import wraps
 from string import Formatter
 from types import ModuleType
 
 import box
 import dill
-import slider
 import sqlitedict
+from irc.client import NickMask
 from twisted.internet import reactor
 
 import osu
+import slider
+from bot import FruityBot
+from slider import Beatmap
 
 logger = logging.getLogger(__name__)
-URL_REGEX = r"""(?i)\b((?:https?:(?:/{1,3}|[a-z0-9%])|[a-z0-9.\-]+[.](?:com|net|org|edu|gov|mil|aero|asia|biz|cat|coop|info|int|jobs|mobi|museum|name|post|pro|tel|travel|xxx|ac|ad|ae|af|ag|ai|al|am|an|ao|aq|ar|as|at|au|aw|ax|az|ba|bb|bd|be|bf|bg|bh|bi|bj|bm|bn|bo|br|bs|bt|bv|bw|by|bz|ca|cc|cd|cf|cg|ch|ci|ck|cl|cm|cn|co|cr|cs|cu|cv|cx|cy|cz|dd|de|dj|dk|dm|do|dz|ec|ee|eg|eh|er|es|et|eu|fi|fj|fk|fm|fo|fr|ga|gb|gd|ge|gf|gg|gh|gi|gl|gm|gn|gp|gq|gr|gs|gt|gu|gw|gy|hk|hm|hn|hr|ht|hu|id|ie|il|im|in|io|iq|ir|is|it|je|jm|jo|jp|ke|kg|kh|ki|km|kn|kp|kr|kw|ky|kz|la|lb|lc|li|lk|lr|ls|lt|lu|lv|ly|ma|mc|md|me|mg|mh|mk|ml|mm|mn|mo|mp|mq|mr|ms|mt|mu|mv|mw|mx|my|mz|na|nc|ne|nf|ng|ni|nl|no|np|nr|nu|nz|om|pa|pe|pf|pg|ph|pk|pl|pm|pn|pr|ps|pt|pw|py|qa|re|ro|rs|ru|rw|sa|sb|sc|sd|se|sg|sh|si|sj|Ja|sk|sl|sm|sn|so|sr|ss|st|su|sv|sx|sy|sz|tc|td|tf|tg|th|tj|tk|tl|tm|tn|to|tp|tr|tt|tv|tw|tz|ua|ug|uk|us|uy|uz|va|vc|ve|vg|vi|vn|vu|wf|ws|ye|yt|yu|za|zm|zw)/)(?:[^\s()<>{}\[\]]+|\([^\s()]*?\([^\s()]+\)[^\s()]*?\)|\([^\s]+?\))+(?:\([^\s()]*?\([^\s()]+\)[^\s()]*?\)|\([^\s]+?\)|[^\s`!()\[\]{};:'".,<>?«»“”‘’])|(?:(?<!@)[a-z0-9]+(?:[.\-][a-z0-9]+)*[.](?:com|net|org|edu|gov|mil|aero|asia|biz|cat|coop|info|int|jobs|mobi|museum|name|post|pro|tel|travel|xxx|ac|ad|ae|af|ag|ai|al|am|an|ao|aq|ar|as|at|au|aw|ax|az|ba|bb|bd|be|bf|bg|bh|bi|bj|bm|bn|bo|br|bs|bt|bv|bw|by|bz|ca|cc|cd|cf|cg|ch|ci|ck|cl|cm|cn|co|cr|cs|cu|cv|cx|cy|cz|dd|de|dj|dk|dm|do|dz|ec|ee|eg|eh|er|es|et|eu|fi|fj|fk|fm|fo|fr|ga|gb|gd|ge|gf|gg|gh|gi|gl|gm|gn|gp|gq|gr|gs|gt|gu|gw|gy|hk|hm|hn|hr|ht|hu|id|ie|il|im|in|io|iq|ir|is|it|je|jm|jo|jp|ke|kg|kh|ki|km|kn|kp|kr|kw|ky|kz|la|lb|lc|li|lk|lr|ls|lt|lu|lv|ly|ma|mc|md|me|mg|mh|mk|ml|mm|mn|mo|mp|mq|mr|ms|mt|mu|mv|mw|mx|my|mz|na|nc|ne|nf|ng|ni|nl|no|np|nr|nu|nz|om|pa|pe|pf|pg|ph|pk|pl|pm|pn|pr|ps|pt|pw|py|qa|re|ro|rs|ru|rw|sa|sb|sc|sd|se|sg|sh|si|sj|Ja|sk|sl|sm|sn|so|sr|ss|st|su|sv|sx|sy|sz|tc|td|tf|tg|th|tj|tk|tl|tm|tn|to|tp|tr|tt|tv|tw|tz|ua|ug|uk|us|uy|uz|va|vc|ve|vg|vi|vn|vu|wf|ws|ye|yt|yu|za|zm|zw)\b/?(?!@)))"""
-
 
 def reload_all(top_module, max_depth=20):
     """
@@ -37,7 +39,7 @@ def reload_all(top_module, max_depth=20):
     """
     for_reload = dict()  # modules to reload: K=module, V=depth
 
-    def trace_reload(recursed_module, depth):  # recursive
+    def trace_reload(recursed_module: ModuleType, depth: int):  # recursive
         depth += 1
         if type(recursed_module) == ModuleType and depth < max_depth:
             # if recursed_module is deeper and could be reloaded
@@ -104,7 +106,7 @@ def command(remove_cmd=False):
 
 class Utils:
     @staticmethod
-    def isfloat(value):
+    def isfloat(value: float):
         try:
             float(value)
             return True
@@ -116,7 +118,7 @@ class Utils:
         return max(min(max_n, n), min_n)
 
     @staticmethod
-    def strfdelta(tdelta, fmt):
+    def strfdelta(tdelta: datetime.timedelta, fmt: str):
         f = Formatter()
         d = {}
         l = {'D': 86400, 'H': 3600, 'M': 60, 'S': 1}
@@ -130,7 +132,7 @@ class Utils:
         return f.format(fmt, **d)
 
     @staticmethod
-    def check_user_in_db(source, bot, msg_type):
+    def check_user_in_db(source: NickMask, bot: FruityBot, msg_type: str):
         user_in = False
 
         if msg_type == "ftm":
@@ -139,7 +141,7 @@ class Utils:
             else:
                 user_in = True
         elif msg_type == "um":
-            if source.nick not in bot.user_pref or bool(bot.user_pref[source.nick].updated) is False:
+            if source.nick not in bot.user_pref or not bool(bot.user_pref[source.nick].updated):
                 if source.nick not in bot.user_pref:
                     bot.user_pref[source.nick] = UserPref(source.user, None, updated=True)
                 else:
@@ -153,7 +155,7 @@ class Utils:
         return user_in
 
     @staticmethod
-    def check_mode_in_db(source, bot, beatmap_data, np=False):
+    def check_mode_in_db(source: NickMask, bot: FruityBot, beatmap_data: Beatmap, np: bool = False):
         if int(beatmap_data.mode) != 0:
             mode = int(beatmap_data.mode)
             if np:
@@ -172,18 +174,16 @@ class Utils:
                 return mode_db
 
     @staticmethod
-    def set_pref(source, bot, mode):
-        if source not in bot.user_pref:
+    def set_pref(source: NickMask, bot: FruityBot, mode: int):
+        if source.nick not in bot.user_pref:
             bot.user_pref[source.nick] = UserPref(source.user, mode)
         else:
             x = bot.user_pref[source.nick]
             x.mode = mode
             bot.user_pref[source.nick] = x
 
-        bot.user_pref.commit()
-
     @staticmethod
-    def create_sqlite_dict(db, table):
+    def create_sqlite_dict(db: str, table: str):
         def encode(obj):
             return sqlite3.Binary(zlib.compress(dill.dumps(obj, dill.HIGHEST_PROTOCOL)))
 
@@ -191,28 +191,6 @@ class Utils:
             return dill.loads(zlib.decompress(bytes(obj)))
 
         return sqlitedict.SqliteDict(db, tablename=table, encode=encode, decode=decode, autocommit=True)
-
-    @staticmethod
-    def update_db():
-        user_pref = Utils.create_sqlite_dict("./userpref2.db", "userpref")
-        old_user_pref = sqlite3.connect("./userpref.db")
-        db_cursor = old_user_pref.cursor()
-        try:
-            bool(db_cursor.execute("SELECT mode FROM userdb").fetchone()[0])
-            logger.info("updating db...")
-            db_cursor.execute("SELECT COUNT(*) FROM userdb")
-            count = db_cursor.fetchone()[0]
-            db_cursor.execute("SELECT * FROM userdb")
-            for i in range(count):
-                row = db_cursor.fetchone()
-                user_pref[row[0]] = UserPref(None, row[1])
-            old_user_pref.close()
-            user_pref.close()
-            os.remove("userpref.db")
-            os.rename("userpref2.db", "userpref.db")
-            logger.info("update completed!")
-        except:
-            logger.info("userdb already updated")
 
 
 class Commands:
@@ -239,6 +217,7 @@ class Commands:
     def die(self, bot, e):
         bot.msg(e.source.nick, "Shutting down...")
         bot.user_pref.close()
+        bot.recommend.close()
         reactor.callLater(2, reactor.callFromThread, reactor.stop)
 
     kill = die
@@ -248,7 +227,7 @@ class Commands:
     @is_owner()
     @command()
     def test(self, bot, e):
-        bot.msg(e.source.nick, str(bot.recommend[e.source.nick]))
+        bot.msg(e.source.nick, "www")
 
     @is_owner()
     @command()
@@ -367,3 +346,68 @@ class UserPref:
         self.user_id = user_id
         self.mode = mode
         self.updated = updated
+
+
+class ColorFormatter(logging.Formatter):
+    from colorama import Fore, Back, Style
+    BLACK, RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN, WHITE = range(8)
+
+    COLORS = {
+        'WARNING' : (Style.DIM + Fore.BLACK, Back.YELLOW),
+        'INFO'    : (Style.BRIGHT + Fore.WHITE, Back.CYAN),
+        'DEBUG'   : (Style.NORMAL + Fore.WHITE, Back.BLUE),
+        'CRITICAL': (Style.DIM + Fore.BLACK, Back.YELLOW),
+        'ERROR'   : (Style.BRIGHT + Fore.WHITE, Back.RED),
+    }
+
+    CCOLORS = {
+        "BLACK": BLACK,
+        "RED": RED,
+        "GREEN": GREEN,
+        "YELLOW": YELLOW,
+        "BLUE": BLUE,
+        "MAGENTA": MAGENTA,
+        "CYAN": CYAN,
+        "WHITE": WHITE,
+    }
+
+    COLOR_SEQ = "\033[1;%dm"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def format(self, record):
+        levelname = record.levelname
+        color = self.COLORS[levelname][0]
+        bg_color = self.COLORS[levelname][1]
+        message = logging.Formatter.format(self, record)
+        message = message.replace("$RESET", self.Style.RESET_ALL) \
+            .replace("$BRIGHT", self.Style.BRIGHT) \
+            .replace("$COLOR", color) \
+            .replace("$BGCOLOR", bg_color)
+        for k, v in self.CCOLORS.items():
+            message = message.replace("$" + k, self.COLOR_SEQ % (v + 30)) \
+                .replace("$BG" + k, self.COLOR_SEQ % (v + 40))
+        return message + self.Style.RESET_ALL
+
+
+class RecentDict(OrderedDict):
+    def __init__(self, size_limit: int, *args, **kwargs):
+        self.size_limit = size_limit
+        super().__init__(*args, **kwargs)
+        self.__check_size_limit()
+
+    def __setitem__(self, key, value):
+        super().__setitem__(key, value)
+        self.__check_size_limit()
+
+    def __getitem__(self, key):
+        value = super().__getitem__(key)
+        del self[key]
+        self[key] = value
+        return value
+
+    def __check_size_limit(self):
+        if self.size_limit is not None:
+            while len(self) > self.size_limit:
+                self.popitem(last=False)
