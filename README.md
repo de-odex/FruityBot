@@ -1,3 +1,5 @@
+## !! undergoing radical changes, please wait !!
+
 ```diff
 - Disclaimer: Making a bot account is disallowed unless you have permission from peppy. 
 - Please email him or support (pe@ppy.sh) before doing so.
