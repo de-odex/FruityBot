@@ -389,9 +389,13 @@ paket-files/
 
 # Project Specific
 osulib/
+old logs/
+deprecated/
+.cache/
 _Extra Utils/
 config.json
 debug.json
+*.lprof
 *.db
 *.log
 *.sln

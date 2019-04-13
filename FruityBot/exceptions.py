@@ -1,0 +1,2 @@
+class MissingPreferenceError(Exception):
+    pass

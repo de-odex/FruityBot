@@ -1,0 +1,11 @@
+en:
+  none: No help string.
+  deprecated: Command deprecated.
+  set: Sets a user setting.
+  help: Sends you a link to [https://github.com/de-odex/FruityBot/wiki this page]. Display more help with !help (command)
+  np: Displays the pp at varying accuracies and full combo/varying scores for the map you were listening to.
+  with: "Displays the pp at indicated mods for the map you last did /np for.\n ex. !with (mods)."
+  with_mode: "Displays the pp at indicated mods for the map you last did /np for.\n ex. !with (mods)\n Usable mods: {v}."
+  acc: "Displays the pp at indicated variables for the map you last did /np for.\n ex. !acc (accuracy) [(combo)x (miss)m) or (score)s or (miss)m]."
+  acc_mode: "Displays the pp at indicated variables for the map you last did /np for.\n For your mode, use {v}."
+  recommend: Recommends a map to you, using your top plays.

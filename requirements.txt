@@ -1,7 +1,10 @@
-twisted
+twisted>=18.4.0
 dill
 python-box
 sqlitedict
 slider
 irc
 colorama
+python-i18n[YAML]
+pycountry
+urlextract

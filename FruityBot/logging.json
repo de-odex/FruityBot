@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "root": {
+    "level": "DEBUG",
+    "handlers": [
+      "console",
+      "log"
+    ]
+  },
+  "loggers": {
+  },
+  "handlers": {
+    "console": {
+      "class": "logging.StreamHandler",
+      "level": "DEBUG",
+      "formatter": "formatter",
+      "stream": "ext://sys.stdout"
+    },
+    "log": {
+      "class": "logging.handlers.TimedRotatingFileHandler",
+      "level": "INFO",
+      "formatter": "logformatter",
+      "filename": "./log/info.log",
+      "when": "midnight"
+    }
+  },
+  "formatters": {
+    "formatter": {
+      "()": "logging.ColorFormatter",
+      "format": "%(asctime)s.%(msecs)03d | $BGCOLOR$COLOR %(levelname)s $RESET %(name)s: %(message)s",
+      "datefmt": "%Y-%m-%d %H:%M:%S"
+    },
+    "logformatter": {
+      "format": "%(asctime)s.%(msecs)03d | [%(levelname)s] %(name)s: %(message)s",
+      "datefmt": "%Y-%m-%d %H:%M:%S"
+    }
+  }
+}

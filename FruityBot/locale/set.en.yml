@@ -1,0 +1,8 @@
+en:
+  tillerino: Please message Tillerino for standard pp predictions!
+  setting_invalid: Invalid setting.
+  lang_invalid: Invalid language.
+  mode_invalid: Invalid mode.
+  setting: Setting "{}" was successfully set to "{}"!
+  how_to_mode: Set a mode with !set mode [catch|mania|taiko].
+  how_to_lang: Set a language with !set lang [https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes iso 639-1 code]; the two letter codes.

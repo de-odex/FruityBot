@@ -1,0 +1,7 @@
+en:
+  help: Need help? Check [https://github.com/de-odex/FruityBot/wiki the wiki] for commands.
+  deprecated: This command has been removed.
+  update: eyo, its boterino here with an update ([https://aeverr.s-ul.eu/CpdBefOU sic]). [https://discord.gg/2NjBpNa We have a Discord server]. Database issues now (probably) resolved.
+  first_time: Welcome, and thanks for using my bot! Check out [https://github.com/de-odex/FruityBot/wiki the wiki] for commands. [https://discord.gg/2NjBpNa We have a Discord server].
+  no_permission: You do not have the permissions to run this command!
+  no_arguments: No arguments were passed.

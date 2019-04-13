@@ -1,0 +1,16 @@
+en:
+  beatmapset: This is a beatmap set, not a beatmap.
+  mod_invalid: Invalid mod.
+  link_invalid: Link is invalid.
+  mode_invalid: Invalid mode.
+  mod_unsupported: These mods{} are not supported yet!
+  no_np: You haven't /np'd me anything yet!
+  no_recent: The osu!api doesn't seem to show that you have any recent plays...
+  no_beatmap: Your beatmap seems to have disappeared from the internet.
+  miss_error: You MISSed something there.
+  acc_error: Check your accuracy again, please.
+  player_combo_error: You made a mistake with your combo!
+  score_error: You messed up your score there...
+  inaccurate: The results may be very inaccurate, and the displayed star rating will be wrong.
+  buggy: This command has become very buggy and is no longer maintained. Proceed with caution.
+  loading: The bot is still loading, please wait...
