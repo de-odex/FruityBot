@@ -1,10 +1,14 @@
 twisted>=18.4.0
 dill
+numpy
 python-box
 sqlitedict
 slider
 irc
 colorama
+redis
 python-i18n[YAML]
 pycountry
 urlextract
+ratelimit
+git+https://github.com/ygl-rg/cyclone3.git@master

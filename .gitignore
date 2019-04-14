@@ -389,6 +389,7 @@ paket-files/
 
 # Project Specific
 osulib/
+osu_diff/
 old logs/
 deprecated/
 .cache/
